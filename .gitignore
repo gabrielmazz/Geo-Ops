@@ -35,3 +35,4 @@ build/
 
 ### Scripts ### -> Toda a pasta Scripts
 scripts/
+node_modules
