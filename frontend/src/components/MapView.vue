@@ -5,9 +5,12 @@ import 'leaflet/dist/leaflet.css'
 
 type GeoPoint = [number, number]
 
+const DEFAULT_ROUTE_COLOR = '#2563eb'
+
 const props = defineProps<{
 	maxPoints?: number
 	routeCoordinates?: Array<{ lat: number; lon: number }>
+	routeColor?: string
 }>()
 const emit = defineEmits<{
 	(e: 'update:points', value: GeoPoint[]): void
@@ -18,6 +21,11 @@ let map: LMap | null = null
 let markerLayer: L.LayerGroup | null = null
 let routePolyline: L.Polyline | null = null
 const selectedPoints = ref<GeoPoint[]>([])
+
+const getRouteColor = () => {
+	const color = props.routeColor?.trim()
+	return color && color.length > 0 ? color : DEFAULT_ROUTE_COLOR
+}
 
 const refreshMarkers = () => {
 	if (!map || !markerLayer) return
@@ -71,7 +79,7 @@ const updateRoutePolyline = () => {
 
 	if (!routePolyline) {
 		routePolyline = L.polyline(latLngs, {
-			color: '#2563eb',
+			color: getRouteColor(),
 			weight: 5,
 			opacity: 0.85,
 			lineJoin: 'round',
@@ -80,6 +88,8 @@ const updateRoutePolyline = () => {
 	} else {
 		routePolyline.setLatLngs(latLngs)
 	}
+
+	routePolyline.setStyle({ color: getRouteColor() })
 
 	const bounds = L.latLngBounds(latLngs)
 	selectedPoints.value.forEach((point) => {
@@ -128,6 +138,15 @@ watch(
 		updateRoutePolyline()
 	},
 	{ deep: true },
+)
+
+watch(
+	() => props.routeColor,
+	() => {
+		if (routePolyline) {
+			routePolyline.setStyle({ color: getRouteColor() })
+		}
+	},
 )
 </script>
 
