@@ -1,4 +1,4 @@
-package com.gabriel.api.hello;
+package com.geo.api.hello;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

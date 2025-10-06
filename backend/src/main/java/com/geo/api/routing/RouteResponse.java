@@ -1,4 +1,4 @@
-package com.gabriel.api.routing;
+package com.geo.api.routing;
 
 import java.util.List;
 
