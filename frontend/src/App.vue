@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { helloApi, requestRoute, type RouteResponse } from './services/api'
 
 // Importação dos componentes locais
-import Alert from './components/Alert.vue'
 import MapView from './components/MapView.vue'
+
+// Importação dos componentes montados
+import Alert from './components/Alert.vue'
+import Button from './components/Button.vue'
+import RouteTimeline from './components/RouteTimeline.vue'
+import Drawer from './components/Drawer.vue'
+import ColorPicker from './components/ColorPicker.vue'
 
 type GeoPoint = [number, number]
 
@@ -15,33 +21,21 @@ const selectedPoints = ref<GeoPoint[]>([])
 const routeResult = ref<RouteResponse | null>(null)
 const routeError = ref<string | null>(null)
 const routeLoading = ref(false)
+const DEFAULT_ROUTE_COLOR = '#ff0000'
+const routeColor = ref<string>(DEFAULT_ROUTE_COLOR)
 
 type AlertType = 'default' | 'info' | 'success' | 'warning' | 'error'
-type RouteNotification = {
+
+type AppAlert = {
+	id: number
 	title?: string
 	message: string
 	type: AlertType
+	timer?: ReturnType<typeof setTimeout>
 }
 
-const routeNotification = ref<RouteNotification | null>(null)
-let notificationTimer: ReturnType<typeof setTimeout> | null = null
-
-const clearRouteNotification = () => {
-	if (notificationTimer) {
-		window.clearTimeout(notificationTimer)
-		notificationTimer = null
-	}
-	routeNotification.value = null
-}
-
-const showRouteNotification = (notification: RouteNotification) => {
-	clearRouteNotification()
-	routeNotification.value = notification
-	notificationTimer = window.setTimeout(() => {
-		routeNotification.value = null
-		notificationTimer = null
-	}, 4000)
-}
+const alerts = ref<AppAlert[]>([])
+let alertIdCounter = 0
 
 type SelectedPointDisplay = {
 	key: string
@@ -108,18 +102,11 @@ const routeTimelineItems = computed(() => {
 		: [originItem, ...waypointItems]
 })
 
-const getTimelineDot = (item: TimelineItem) => {
-	if (item.role === 'origin') {
-		return '🟢'
-	}
-	if (item.role === 'destination') {
-		return '🔴'
-	}
-	return '🔵'
-}
-
 // Estado do drawer de ações -> Drawer para ver os pontos que foram selecionados
 const isActionsDrawerOpen = ref(false)
+
+// Estado do drawer de personalizações -> Drawer para ver as personalizações do mapa
+const isCustomizationsDrawerOpen = ref(false)
 
 const handlePointsUpdate = (points: GeoPoint[]) => {
 	selectedPoints.value = points
@@ -180,12 +167,39 @@ const selectedPointsDisplay = computed<SelectedPointDisplay[]>(() => {
 		})
 })
 
+const pushAlert = (alert: Omit<AppAlert, 'id' | 'timer'> & { durationMs?: number }) => {
+	alertIdCounter += 1
+	const durationMs = alert.durationMs ?? 5000
+
+	const alertEntry: AppAlert = {
+		id: alertIdCounter,
+		...alert,
+	}
+
+	alertEntry.timer = setTimeout(() => {
+		removeAlert(alertEntry.id)
+	}, durationMs)
+
+	alerts.value.push(alertEntry)
+}
+
+const removeAlert = (id: number) => {
+	alerts.value = alerts.value.reduce<AppAlert[]>((acc, alert) => {
+		if (alert.id === id) {
+			if (alert.timer) {
+				clearTimeout(alert.timer)
+			}
+			return acc
+		}
+		return acc.concat(alert)
+	}, [])
+}
+
 const fetchRoute = async (points: GeoPoint[]) => {
 	if (points.length < 2) {
 		routeResult.value = null
 		routeError.value = null
 		routeLoading.value = false
-		clearRouteNotification()
 		return
 	}
 
@@ -195,26 +209,34 @@ const fetchRoute = async (points: GeoPoint[]) => {
 	try {
 		const result = await requestRoute(points)
 		routeResult.value = result
-		routeError.value = null
-		if (result) {
-			showRouteNotification({
-				title: 'Rota calculada',
-				message: 'A rota foi calculada com sucesso.',
-				type: 'success',
-			})
-		}
+
+		const pointCount = points.length
+		const pointsDescription =
+			pointCount === 2 ? 'origem e destino' : `${pointCount} pontos`
+		pushAlert({
+			title: 'Rota calculada',
+			type: 'success',
+			message: `A rota com ${pointsDescription} foi gerada com sucesso.`,
+		})
 	} catch (err) {
 		routeResult.value = null
-		const errorMessage = err instanceof Error ? err.message : String(err)
-		routeError.value = errorMessage
-		showRouteNotification({
+		routeError.value = err instanceof Error ? err.message : String(err)
+
+		const message =
+			routeError.value ||
+			'Ocorreu um erro desconhecido ao calcular a rota. Verifique a conexão com o backend.'
+		pushAlert({
 			title: 'Erro ao calcular a rota',
-			message: errorMessage,
 			type: 'error',
+			message,
 		})
 	} finally {
 		routeLoading.value = false
 	}
+}
+
+const dismissRouteError = () => {
+	routeError.value = null
 }
 
 const loadGreeting = async () => {
@@ -234,10 +256,6 @@ onMounted(() => {
 	void loadGreeting()
 })
 
-onUnmounted(() => {
-	clearRouteNotification()
-})
-
 watch(
 	selectedPoints,
 	(points) => {
@@ -249,21 +267,7 @@ watch(
 
 <template>
 	<div class="min-h-screen flex bg-slate-900/5">
-		<div
-			v-if="routeNotification"
-			class="fixed top-6 right-6 z-[1200] w-full max-w-sm pointer-events-none">
-			<div class="pointer-events-auto">
-				<Alert
-					:key="`${routeNotification.type}-${routeNotification.message}`"
-					:title="routeNotification.title"
-					:message="routeNotification.message"
-					:type="routeNotification.type"
-					:closable="true"
-					:show-icon="true"
-					@close="clearRouteNotification"
-				/>
-			</div>
-		</div>
+
 		<main class="flex-1 flex flex-col p-8">
 			<div
 				class="flex-1 w-full rounded-3xl bg-white/80 backdrop-blur shadow-xl px-10 py-12 space-y-6 flex flex-col">
@@ -276,7 +280,7 @@ watch(
 				</div>
 
 				<div class="relative flex-1 min-h-[60vh]">
-					<MapView :max-points="2" :route-coordinates="routeCoordinates"
+					<MapView :max-points="2" :route-coordinates="routeCoordinates" :route-color="routeColor"
 						@update:points="handlePointsUpdate" />
 
 					<div class="pointer-events-none absolute left-6 bottom-6 z-[1000] max-w-xs">
@@ -287,10 +291,7 @@ watch(
 								Nenhum ponto selecionado.
 							</div>
 							<ol v-else class="mt-3 space-y-1.5">
-								<li
-									v-for="item in selectedPointsDisplay"
-									:key="item.key"
-									:class="item.classes">
+								<li v-for="item in selectedPointsDisplay" :key="item.key" :class="item.classes">
 									<div class="font-medium">{{ item.label }}</div>
 									<div class="mt-0.5 text-xs text-slate-600">
 										{{ item.coords[0].toFixed(6) }}, {{ item.coords[1].toFixed(6) }}
@@ -301,35 +302,18 @@ watch(
 					</div>
 				</div>
 
-				<!-- <div class="rounded-2xl bg-slate-900/5 p-5">
-          <h2 class="text-lg font-medium text-slate-800">Resultado da rota</h2>
-          <div v-if="routeLoading" class="mt-3 text-slate-600">Calculando rota...</div>
-          <div v-else-if="routeError" class="mt-3 text-red-600">
-            {{ routeError }}
-          </div>
-          <div v-else-if="routeResult" class="mt-3 space-y-3 text-slate-700">
-            <p>
-              Ordem dos nós: <span class="font-medium">{{ routeResult.nodes.join(' → ') }}</span>
-            </p>
-            <p>Total aproximado: {{ routeResult.totalCost.toFixed(1) }} km</p>
-            <ul class="space-y-1 text-sm">
-              <li
-                v-for="(coordinate, index) in routeResult.coordinates"
-                :key="coordinate.lat + coordinate.lon + '-' + index"
-              >
-                {{ routeResult.nodes[index] ?? `Ponto ${index + 1}` }}:
-                {{ coordinate.lat.toFixed(4) }}, {{ coordinate.lon.toFixed(4) }}
-              </li>
-            </ul>
-          </div>
-          <div v-else class="mt-3 text-slate-600">Selecione dois pontos para calcular a rota.</div>
-        </div>  -->
 				<!-- Div responsavel pelos botões e ações que serão possiveis executar no sistema -->
-				<div>
-					<n-button @click="isActionsDrawerOpen = true">
-						Abrir ações
-					</n-button>
-				</div>
+				<n-flex justify="center">
+
+					<!-- Botão responsável por abrir o drawer dos pontos, mostrando uma timeline -->
+					<Button @click="isActionsDrawerOpen = true" :label="'Abrir timeline'"
+						class="metamorphous-regular" />
+
+					<!-- Botão responsável por abrir o drawer de personalizações -->
+					<Button @click="isCustomizationsDrawerOpen = true" :label="'Abrir personalizações'"
+						class="metamorphous-regular" />
+
+				</n-flex>
 			</div>
 		</main>
 	</div>
@@ -339,38 +323,44 @@ watch(
 	<!-- A ideia é que ele usa o componente do Native para montar uma timeline
 	  	com os pontos selecionados, marcando o ponto de origem, destino e os pontos
 	  	intermediários -->
-	<n-drawer v-model:show="isActionsDrawerOpen" :width="502" placement="right">
+	<Drawer title="Ações disponíveis" v-model:show="isActionsDrawerOpen">
+		<section class="space-y-3">
+			<h2 class="text-lg font-medium text-slate-800">Timeline da rota</h2>
 
-		<n-drawer-content title="Ações disponíveis">
-			<section class="space-y-3">
-				<h2 class="text-lg font-medium text-slate-800">Timeline da rota</h2>
-					<div v-if="routeLoading" class="text-slate-600">Calculando rota...</div>
-					<Alert
-						v-else-if="routeError"
-						title="Erro ao calcular a rota"
-						type="error"
-						:closable="true"
-						:show-icon="true"
-						:message="routeError ?? 'Ocorreu um erro desconhecido ao calcular a rota.'"
-						@close="routeError = null"
-					/>
-					<n-timeline v-else-if="routeTimelineItems.length">
-						<n-timeline-item
-							v-for="item in routeTimelineItems"
-							:key="item.key"
-							:title="item.label"
-							:dot="getTimelineDot(item)">
-							<div :class="item.badgeClasses">
-								<div class="font-medium">{{ item.label }}</div>
-								<div class="mt-0.5 text-xs opacity-80">
-									{{ item.coordinate.lat.toFixed(6) }}, {{ item.coordinate.lon.toFixed(6) }}
-								</div>
-							</div>
-						</n-timeline-item>
-					</n-timeline>
-				<div v-else class="text-slate-600">Selecione dois pontos para visualizar a rota.</div>
-			</section>
-		</n-drawer-content>
-	</n-drawer>
+			<div v-if="routeLoading" class="text-slate-600">Calculando rota...</div>
+
+			<Alert v-else-if="routeError" title="Erro ao calcular a rota" type="error" :show-icon="true"
+				:closable="true" :message="routeError || 'Ocorreu um erro desconhecido ao calcular a rota.'"
+				@close="dismissRouteError" />
+
+			<RouteTimeline v-else-if="routeTimelineItems.length" :items="routeTimelineItems" />
+
+			<div v-else class="text-slate-600">Selecione dois pontos para visualizar a rota.</div>
+		</section>
+
+	</Drawer>
+
+	<!-- Drawer que mostrara as personalizações do mapa -->
+	<Drawer title="Personalizações do mapa" v-model:show="isCustomizationsDrawerOpen">
+		<section class="space-y-3">
+
+			<n-h2>Personalização da cor da rota</n-h2>
+
+			<ColorPicker v-model="routeColor" label="Cor da rota" :expected-color="DEFAULT_ROUTE_COLOR" @invalid="(msg) =>
+				pushAlert({
+					title: 'Cor inválida',
+					type: 'warning',
+					message: msg,
+				})
+			" />
+		</section>
+	</Drawer>
+
+
+	<!-- Div que ira conter todos os alertas do sistema -->
+	<div class="fixed top-6 right-6 z-[1200] flex w-80 flex-col gap-3">
+		<Alert v-for="alert in alerts" :key="alert.id" :title="alert.title" :type="alert.type" :message="alert.message"
+			:show-icon="true" :closable="true" @close="removeAlert(alert.id)" />
+	</div>
 
 </template>
