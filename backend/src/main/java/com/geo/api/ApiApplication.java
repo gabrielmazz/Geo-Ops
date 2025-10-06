@@ -1,4 +1,4 @@
-package com.gabriel.api;
+package com.geo.api;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

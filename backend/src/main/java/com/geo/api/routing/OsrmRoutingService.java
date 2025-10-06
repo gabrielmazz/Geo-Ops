@@ -1,4 +1,4 @@
-package com.gabriel.api.routing;
+package com.geo.api.routing;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

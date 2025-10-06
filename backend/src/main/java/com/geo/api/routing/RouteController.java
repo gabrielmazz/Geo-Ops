@@ -1,4 +1,4 @@
-package com.gabriel.api.routing;
+package com.geo.api.routing;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
