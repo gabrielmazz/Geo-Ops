@@ -6,11 +6,29 @@ import 'leaflet/dist/leaflet.css'
 type GeoPoint = [number, number]
 
 const DEFAULT_ROUTE_COLOR = '#2563eb'
+const LIGHT_TILE_LAYER = {
+	url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+	options: {
+		maxZoom: 19,
+		attribution:
+			'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+	},
+} as const
+const DARK_TILE_LAYER = {
+	url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+	options: {
+		maxZoom: 19,
+		subdomains: 'abcd',
+		attribution:
+			'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+	},
+} as const
 
 const props = defineProps<{
 	maxPoints?: number
 	routeCoordinates?: Array<{ lat: number; lon: number }>
 	routeColor?: string
+	isDarkMode?: boolean
 }>()
 const emit = defineEmits<{
 	(e: 'update:points', value: GeoPoint[]): void
@@ -20,11 +38,32 @@ const mapEl = ref<HTMLDivElement | null>(null)
 let map: LMap | null = null
 let markerLayer: L.LayerGroup | null = null
 let routePolyline: L.Polyline | null = null
+let tileLayer: L.TileLayer | null = null
+let currentTileMode: 'light' | 'dark' | null = null
 const selectedPoints = ref<GeoPoint[]>([])
 
 const getRouteColor = () => {
 	const color = props.routeColor?.trim()
 	return color && color.length > 0 ? color : DEFAULT_ROUTE_COLOR
+}
+
+const applyTileLayer = (isDark: boolean) => {
+	if (!map) return
+
+	const mode: 'light' | 'dark' = isDark ? 'dark' : 'light'
+	if (currentTileMode === mode && tileLayer) {
+		return
+	}
+
+	const config = mode === 'dark' ? DARK_TILE_LAYER : LIGHT_TILE_LAYER
+	const nextLayer = L.tileLayer(config.url, config.options)
+
+	if (tileLayer) {
+		map.removeLayer(tileLayer)
+	}
+
+	tileLayer = nextLayer.addTo(map)
+	currentTileMode = mode
 }
 
 const refreshMarkers = () => {
@@ -109,11 +148,7 @@ onMounted(() => {
 
 	markerLayer = L.layerGroup().addTo(map)
 
-	L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-		maxZoom: 19,
-		attribution:
-			'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-	}).addTo(map)
+	applyTileLayer(Boolean(props.isDarkMode))
 
 	map.on('click', handleMapClick)
 	updateRoutePolyline()
@@ -123,12 +158,17 @@ onBeforeUnmount(() => {
 	if (map) {
 		map.off('click', handleMapClick)
 		markerLayer?.clearLayers()
+		if (tileLayer) {
+			map.removeLayer(tileLayer)
+		}
 		map.remove()
 	}
 
 	routePolyline?.remove()
 	routePolyline = null
 	markerLayer = null
+	tileLayer = null
+	currentTileMode = null
 	map = null
 })
 
@@ -148,6 +188,13 @@ watch(
 		}
 	},
 )
+
+watch(
+	() => props.isDarkMode,
+	(value) => {
+		applyTileLayer(Boolean(value))
+	},
+)
 </script>
 
 <template>
@@ -161,5 +208,7 @@ watch(
 	min-height: 60vh;
 	border-radius: 12px;
 	overflow: hidden;
+	background-color: var(--color-page-muted);
+	transition: background-color 0.3s ease;
 }
 </style>
