@@ -34,7 +34,7 @@ const formatCoordinate = (value: number) => value.toFixed(6)
 			<template #default>
 				<div class="flex flex-col gap-1">
 					<span :class="item.badgeClasses">{{ roleLabels[item.role] }}</span>
-					<span class="text-xs text-slate-500">
+					<span class="text-xs text-tertiary">
 						{{ formatCoordinate(item.coordinate.lat) }},
 						{{ formatCoordinate(item.coordinate.lon) }}
 					</span>

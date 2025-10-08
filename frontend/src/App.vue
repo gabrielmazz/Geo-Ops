@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { darkTheme, type GlobalThemeOverrides } from 'naive-ui'
 import { helloApi, requestRoute, type RouteResponse } from './services/api'
 
 // Importação dos componentes locais
@@ -11,8 +12,29 @@ import Button from './components/Button.vue'
 import RouteTimeline from './components/RouteTimeline.vue'
 import Drawer from './components/Drawer.vue'
 import ColorPicker from './components/ColorPicker.vue'
+import Switch from './components/Switch.vue'
+import { useThemeStore } from './stores/theme'
 
 type GeoPoint = [number, number]
+
+const themeStore = useThemeStore()
+const isDark = computed({
+	get: () => themeStore.isDark,
+	set: (value: boolean) => {
+		themeStore.setTheme(value)
+	},
+})
+
+const themeOverrides: GlobalThemeOverrides = {
+	common: {
+		fontFamily:
+			'"Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+		primaryColor: '#2563eb',
+		primaryColorHover: '#1d4ed8',
+		primaryColorPressed: '#1d4ed8',
+		primaryColorSuppl: '#1d4ed8',
+	},
+}
 
 const message = ref('')
 const error = ref<string | null>(null)
@@ -67,9 +89,9 @@ const routeTimelineItems = computed(() => {
 	let waypointCount = 0
 
 	const roleClasses: Record<TimelineItem['role'], string> = {
-		origin: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-		destination: 'border-rose-200 bg-rose-50 text-rose-700',
-		waypoint: 'border-slate-200 bg-slate-50 text-slate-700',
+		origin: 'badge badge--origin',
+		destination: 'badge badge--destination',
+		waypoint: 'badge badge--waypoint',
 	}
 
 	const items = coords.map<TimelineItem>((coordinate, index) => {
@@ -89,12 +111,12 @@ const routeTimelineItems = computed(() => {
 			label,
 			coordinate,
 			role,
-			badgeClasses: `rounded-lg border px-3 py-2 text-sm ${roleClasses[role]}`,
+			badgeClasses: roleClasses[role],
 		}
 	})
 
-	const originItem = items[0]
-	const destinationItem = items.length > 1 ? items[items.length - 1] : null
+	const originItem = items[0]!
+	const destinationItem = items.length > 1 ? items[items.length - 1]! : null
 	const waypointItems = items.slice(1, items.length - (destinationItem ? 1 : 0))
 
 	return destinationItem
@@ -122,9 +144,9 @@ const selectedPointsDisplay = computed<SelectedPointDisplay[]>(() => {
 	let waypointCount = 0
 
 	const roleClasses: Record<SelectedPointDisplay['role'], string> = {
-		origin: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-		destination: 'border-rose-200 bg-rose-50 text-rose-700',
-		waypoint: 'border-slate-200 bg-slate-50 text-slate-700',
+		origin: 'point-pill point-pill--origin',
+		destination: 'point-pill point-pill--destination',
+		waypoint: 'point-pill point-pill--waypoint',
 	}
 
 	return points
@@ -147,7 +169,7 @@ const selectedPointsDisplay = computed<SelectedPointDisplay[]>(() => {
 				coords: point,
 				label,
 				role,
-				classes: `rounded-lg border px-3 py-2 text-sm ${roleClasses[role]}`,
+				classes: roleClasses[role],
 			}
 		})
 		.sort((a, b) => {
@@ -253,6 +275,7 @@ const loadGreeting = async () => {
 }
 
 onMounted(() => {
+	themeStore.initialize()
 	void loadGreeting()
 })
 
@@ -266,101 +289,139 @@ watch(
 </script>
 
 <template>
-	<div class="min-h-screen flex bg-slate-900/5">
+	<n-config-provider :theme="isDark ? darkTheme : null" :theme-overrides="themeOverrides">
+		<div class="min-h-screen flex app-shell">
 
-		<main class="flex-1 flex flex-col p-8">
-			<div
-				class="flex-1 w-full rounded-3xl bg-white/80 backdrop-blur shadow-xl px-10 py-12 space-y-6 flex flex-col">
-				<div class="space-y-2 text-slate-900">
-					<h1 class="text-2xl font-semibold">Selecione os pontos</h1>
-					<p class="text-slate-600">
-						Clique no mapa para definir até duas posições (origem e destino). Esses valores serão
-						enviados ao backend Java que consulta o OSRM para retornar o melhor caminho disponível.
-					</p>
-				</div>
+			<main class="flex-1 flex flex-col p-8">
+				<div
+					class="flex-1 w-full rounded-3xl surface-card backdrop-blur px-10 py-12 space-y-6 flex flex-col">
+					<div class="space-y-2 text-primary">
+						<h1 class="text-2xl font-semibold">Selecione os pontos</h1>
+						<p class="text-secondary">
+							Clique no mapa para definir até duas posições (origem e destino). Esses valores serão
+							enviados ao backend Java que consulta o OSRM para retornar o melhor caminho disponível.
+						</p>
+					</div>
 
-				<div class="relative flex-1 min-h-[60vh]">
-					<MapView :max-points="2" :route-coordinates="routeCoordinates" :route-color="routeColor"
-						@update:points="handlePointsUpdate" />
+					<div class="relative flex-1 min-h-[60vh]">
+						<MapView :max-points="2" :route-coordinates="routeCoordinates" :route-color="routeColor"
+							:is-dark-mode="isDark" @update:points="handlePointsUpdate" />
 
-					<div class="pointer-events-none absolute left-6 bottom-6 z-[1000] max-w-xs">
-						<div
-							class="pointer-events-auto rounded-2xl bg-white/90 backdrop-blur px-5 py-4 shadow-lg border border-white/60">
-							<h2 class="text-base font-semibold text-slate-800">Pontos selecionados</h2>
-							<div v-if="!selectedPoints.length" class="mt-2 text-sm text-slate-600">
-								Nenhum ponto selecionado.
+						<div class="pointer-events-none absolute left-6 bottom-6 z-[1000] max-w-xs">
+							<div class="pointer-events-auto rounded-2xl surface-card-muted overlay-card px-5 py-4">
+								<h2 class="text-base font-semibold text-primary">Pontos selecionados</h2>
+								<div v-if="!selectedPoints.length" class="mt-2 text-sm text-secondary">
+									Nenhum ponto selecionado.
+								</div>
+								<ol v-else class="mt-3 space-y-1.5">
+									<li v-for="item in selectedPointsDisplay" :key="item.key" :class="item.classes">
+										<div class="font-medium">{{ item.label }}</div>
+										<div class="point-pill__coords">
+											{{ item.coords[0].toFixed(6) }}, {{ item.coords[1].toFixed(6) }}
+										</div>
+									</li>
+								</ol>
 							</div>
-							<ol v-else class="mt-3 space-y-1.5">
-								<li v-for="item in selectedPointsDisplay" :key="item.key" :class="item.classes">
-									<div class="font-medium">{{ item.label }}</div>
-									<div class="mt-0.5 text-xs text-slate-600">
-										{{ item.coords[0].toFixed(6) }}, {{ item.coords[1].toFixed(6) }}
-									</div>
-								</li>
-							</ol>
 						</div>
 					</div>
+
+					<!-- Div responsavel pelos botões e ações que serão possiveis executar no sistema -->
+					<n-flex justify="center">
+
+						<!-- Botão responsável por abrir o drawer dos pontos, mostrando uma timeline -->
+						<Button @click="isActionsDrawerOpen = true" :label="'Abrir timeline'"
+							class="metamorphous-regular" />
+
+						<!-- Botão responsável por abrir o drawer de personalizações -->
+						<Button @click="isCustomizationsDrawerOpen = true" :label="'Abrir personalizações'"
+							class="metamorphous-regular" />
+
+					</n-flex>
 				</div>
-
-				<!-- Div responsavel pelos botões e ações que serão possiveis executar no sistema -->
-				<n-flex justify="center">
-
-					<!-- Botão responsável por abrir o drawer dos pontos, mostrando uma timeline -->
-					<Button @click="isActionsDrawerOpen = true" :label="'Abrir timeline'"
-						class="metamorphous-regular" />
-
-					<!-- Botão responsável por abrir o drawer de personalizações -->
-					<Button @click="isCustomizationsDrawerOpen = true" :label="'Abrir personalizações'"
-						class="metamorphous-regular" />
-
-				</n-flex>
-			</div>
-		</main>
-	</div>
+			</main>
+		</div>
 
 
-	<!-- Drawer que mostrara todos os pontos selecionados -->
-	<!-- A ideia é que ele usa o componente do Native para montar uma timeline
-	  	com os pontos selecionados, marcando o ponto de origem, destino e os pontos
-	  	intermediários -->
-	<Drawer title="Ações disponíveis" v-model:show="isActionsDrawerOpen">
-		<section class="space-y-3">
-			<h2 class="text-lg font-medium text-slate-800">Timeline da rota</h2>
+		<!-- Drawer que mostrara todos os pontos selecionados -->
+		<!-- A ideia é que ele usa o componente do Native para montar uma timeline
+		  	com os pontos selecionados, marcando o ponto de origem, destino e os pontos
+		  	intermediários -->
+		<Drawer title="Ações disponíveis" v-model:show="isActionsDrawerOpen">
+			<section class="space-y-3">
+				<h2 class="text-lg font-medium text-primary">Timeline da rota</h2>
 
-			<div v-if="routeLoading" class="text-slate-600">Calculando rota...</div>
+				<div v-if="routeLoading" class="text-secondary">Calculando rota...</div>
 
-			<Alert v-else-if="routeError" title="Erro ao calcular a rota" type="error" :show-icon="true"
-				:closable="true" :message="routeError || 'Ocorreu um erro desconhecido ao calcular a rota.'"
-				@close="dismissRouteError" />
+				<Alert v-else-if="routeError" title="Erro ao calcular a rota" type="error" :show-icon="true"
+					:closable="true" :message="routeError || 'Ocorreu um erro desconhecido ao calcular a rota.'"
+					@close="dismissRouteError" />
 
-			<RouteTimeline v-else-if="routeTimelineItems.length" :items="routeTimelineItems" />
+				<RouteTimeline v-else-if="routeTimelineItems.length" :items="routeTimelineItems" />
 
-			<div v-else class="text-slate-600">Selecione dois pontos para visualizar a rota.</div>
-		</section>
+				<div v-else class="text-secondary">Selecione dois pontos para visualizar a rota.</div>
+			</section>
 
-	</Drawer>
+		</Drawer>
 
-	<!-- Drawer que mostrara as personalizações do mapa -->
-	<Drawer title="Personalizações do mapa" v-model:show="isCustomizationsDrawerOpen">
-		<section class="space-y-3">
+		<!-- Drawer que mostrara as personalizações do mapa -->
+		<Drawer title="Personalizações do mapa" v-model:show="isCustomizationsDrawerOpen">
+			<section class="space-y-3">
 
-			<n-h2>Personalização da cor da rota</n-h2>
+				<n-h2 class="text-primary">Configurações gerais</n-h2>
 
-			<ColorPicker v-model="routeColor" label="Cor da rota" :expected-color="DEFAULT_ROUTE_COLOR" @invalid="(msg) =>
-				pushAlert({
-					title: 'Cor inválida',
-					type: 'warning',
-					message: msg,
-				})
-			" />
-		</section>
-	</Drawer>
+				<n-grid
+					x-gap="4" :cols="2"
+				>
+					<n-gi>
+
+						<Switch v-model="isDark" label="Dark Mode"
+							description="Ative para mudar o tema do mapa e da aplicação para o modo escuro." />
+
+					</n-gi>
+
+					<n-gi>
+
+						<Switch v-model="routeLoading" label="Modo de carregamento"
+							description="Ative para simular o estado de carregamento da rota." />
+
+					</n-gi>
+
+				</n-grid>
 
 
-	<!-- Div que ira conter todos os alertas do sistema -->
-	<div class="fixed top-6 right-6 z-[1200] flex w-80 flex-col gap-3">
-		<Alert v-for="alert in alerts" :key="alert.id" :title="alert.title" :type="alert.type" :message="alert.message"
-			:show-icon="true" :closable="true" @close="removeAlert(alert.id)" />
-	</div>
+				<n-h2 class="text-primary">Personalização da cor da rota</n-h2>
 
+				<ColorPicker v-model="routeColor" label="Cor da rota" :expected-color="DEFAULT_ROUTE_COLOR" @invalid="(msg) =>
+					pushAlert({
+						title: 'Cor inválida',
+						type: 'warning',
+						message: msg,
+					})
+				" />
+
+				<n-h2 class="text-primary">Personalização do pontos da rota</n-h2>
+
+				<n-p class="text-secondary">
+					Altere a cor dos pontos (origem, destino e intermediários) que aparecem no mapa. A cor padrão é
+				</n-p>
+
+				<ColorPicker v-model="routeColor" label="Cor dos pontos" :expected-color="DEFAULT_ROUTE_COLOR" @invalid="(msg) =>
+					pushAlert({
+						title: 'Cor inválida',
+						type: 'warning',
+						message: msg,
+					})
+				" />
+
+			</section>
+		</Drawer>
+
+
+		<!-- Div que ira conter todos os alertas do sistema -->
+		<div class="fixed top-6 right-6 z-[1200] flex w-80 flex-col gap-3">
+			<Alert v-for="alert in alerts" :key="alert.id" :title="alert.title" :type="alert.type"
+				:message="alert.message" :show-icon="true" :closable="true" @close="removeAlert(alert.id)" />
+		</div>
+
+	</n-config-provider>
 </template>
