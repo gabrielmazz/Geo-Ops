@@ -5,7 +5,8 @@ import 'leaflet/dist/leaflet.css'
 
 type GeoPoint = [number, number]
 
-const DEFAULT_ROUTE_COLOR = '#2563eb'
+const DEFAULT_ROUTE_COLOR = '#22c55e'
+const DEFAULT_POINT_COLOR = '#22c55e'
 const LIGHT_TILE_LAYER = {
 	url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
 	options: {
@@ -28,6 +29,7 @@ const props = defineProps<{
 	maxPoints?: number
 	routeCoordinates?: Array<{ lat: number; lon: number }>
 	routeColor?: string
+	pointColor?: string
 	isDarkMode?: boolean
 }>()
 const emit = defineEmits<{
@@ -45,6 +47,11 @@ const selectedPoints = ref<GeoPoint[]>([])
 const getRouteColor = () => {
 	const color = props.routeColor?.trim()
 	return color && color.length > 0 ? color : DEFAULT_ROUTE_COLOR
+}
+
+const getPointColor = () => {
+	const color = props.pointColor?.trim()
+	return color && color.length > 0 ? color : DEFAULT_POINT_COLOR
 }
 
 const applyTileLayer = (isDark: boolean) => {
@@ -71,9 +78,18 @@ const refreshMarkers = () => {
 
 	const layer = markerLayer
 	layer.clearLayers()
+
+	const markerColor = getPointColor()
 	selectedPoints.value.forEach((point, index) => {
 		const [lat, lng] = point
-		L.marker([lat, lng])
+		L.circleMarker([lat, lng], {
+			radius: 8,
+			color: markerColor,
+			weight: 3,
+			opacity: 1,
+			fillColor: markerColor,
+			fillOpacity: 0.85,
+		})
 			.addTo(layer)
 			.bindTooltip(`Posição ${index + 1}`, {
 				permanent: true,
@@ -94,11 +110,10 @@ const handleMapClick = (event: LeafletMouseEvent) => {
 	const updated = selectedPoints.value.slice()
 
 	if (updated.length >= maxPoints) {
-		updated.shift()
+		updated.length = 0
 	}
 
-	updated.push(point)
-	selectedPoints.value = updated
+	selectedPoints.value = [...updated, point]
 	refreshMarkers()
 	emit('update:points', selectedPoints.value)
 }
@@ -186,6 +201,13 @@ watch(
 		if (routePolyline) {
 			routePolyline.setStyle({ color: getRouteColor() })
 		}
+	},
+)
+
+watch(
+	() => props.pointColor,
+	() => {
+		refreshMarkers()
 	},
 )
 
