@@ -13,6 +13,14 @@ import RouteTimeline from './components/RouteTimeline.vue'
 import Drawer from './components/Drawer.vue'
 import ColorPicker from './components/ColorPicker.vue'
 import Switch from './components/Switch.vue'
+import Modal from './components/Modal.vue'
+
+// Componente que mostra o nome junto com uma animação
+import ViewLoader from './components/ViewLoader.vue'
+
+// Imagens usadas no sistema
+import LogoAliare from './assets/images/logos/logo-aliare.png'
+
 import { useThemeStore } from './stores/theme'
 
 type GeoPoint = [number, number]
@@ -43,8 +51,12 @@ const selectedPoints = ref<GeoPoint[]>([])
 const routeResult = ref<RouteResponse | null>(null)
 const routeError = ref<string | null>(null)
 const routeLoading = ref(false)
-const DEFAULT_ROUTE_COLOR = '#ff0000'
+const DEFAULT_ROUTE_COLOR = '#22c55e'
+const DEFAULT_POINT_COLOR = '#22c55e'
 const routeColor = ref<string>(DEFAULT_ROUTE_COLOR)
+const pointColor = ref<string>(DEFAULT_POINT_COLOR)
+const EARTH_RADIUS_METERS = 6_371_000
+const MAX_SNAP_DISTANCE_METERS = 8_000
 
 type AlertType = 'default' | 'info' | 'success' | 'warning' | 'error'
 
@@ -69,6 +81,88 @@ type SelectedPointDisplay = {
 
 const routeCoordinates = computed(() => routeResult.value?.coordinates ?? [])
 const routeNodes = computed(() => routeResult.value?.nodes ?? [])
+
+const toRadians = (value: number): number => (value * Math.PI) / 180
+
+const distanceBetweenPoints = (pointA: GeoPoint, pointB: GeoPoint): number => {
+	const [lat1, lon1] = pointA
+	const [lat2, lon2] = pointB
+	const dLat = toRadians(lat2 - lat1)
+	const dLon = toRadians(lon2 - lon1)
+	const lat1Rad = toRadians(lat1)
+	const lat2Rad = toRadians(lat2)
+	const a =
+		Math.sin(dLat / 2) ** 2 +
+		Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLon / 2) ** 2
+	return 2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(Math.max(a, 0)))
+}
+
+type RouteValidationResult =
+	| { kind: 'valid' }
+	| {
+			kind: 'invalid-origin' | 'invalid-destination' | 'invalid-both'
+			title: string
+			message: string
+		}
+
+const validateRouteAnchors = (
+	route: RouteResponse,
+	points: GeoPoint[],
+): RouteValidationResult => {
+	if (!points.length || route.coordinates.length < 2) {
+		return {
+			kind: 'invalid-both',
+			title: 'Rota indisponível',
+			message:
+				'Não foi possível traçar a rota com os pontos selecionados. Escolha marcadores em terra firme.',
+		}
+	}
+
+	const originPoint = points[0]
+	const destinationPoint = points[points.length - 1]
+	const firstCoordinate: GeoPoint = [
+		route.coordinates[0]?.lat ?? originPoint[0],
+		route.coordinates[0]?.lon ?? originPoint[1],
+	]
+	const lastCoordinate: GeoPoint = [
+		route.coordinates[route.coordinates.length - 1]?.lat ?? destinationPoint[0],
+		route.coordinates[route.coordinates.length - 1]?.lon ?? destinationPoint[1],
+	]
+
+	const originDistance = distanceBetweenPoints(originPoint, firstCoordinate)
+	const destinationDistance = distanceBetweenPoints(destinationPoint, lastCoordinate)
+	const originInvalid = originDistance > MAX_SNAP_DISTANCE_METERS
+	const destinationInvalid = destinationDistance > MAX_SNAP_DISTANCE_METERS
+
+	if (originInvalid && destinationInvalid) {
+		return {
+			kind: 'invalid-both',
+			title: 'Pontos inválidos',
+			message:
+				'Não foi possível traçar a rota. Os dois pontos selecionados parecem estar no oceano. Escolha locais em terra.',
+		}
+	}
+
+	if (originInvalid) {
+		return {
+			kind: 'invalid-origin',
+			title: 'Origem inválida',
+			message:
+				'Não foi possível traçar a rota. O ponto de origem está em uma área sem acesso por terra (possivelmente oceano). Ajuste a marcação.',
+		}
+	}
+
+	if (destinationInvalid) {
+		return {
+			kind: 'invalid-destination',
+			title: 'Destino inválido',
+			message:
+				'Não foi possível traçar a rota. O ponto de destino está em uma área sem acesso por terra (possivelmente oceano). Ajuste a marcação.',
+		}
+	}
+
+	return { kind: 'valid' }
+}
 
 type TimelineItem = {
 	key: string
@@ -129,6 +223,9 @@ const isActionsDrawerOpen = ref(false)
 
 // Estado do drawer de personalizações -> Drawer para ver as personalizações do mapa
 const isCustomizationsDrawerOpen = ref(false)
+
+// Estado do modal que mostra o meu nome e a animação
+const isModalOpenName = ref(false)
 
 const handlePointsUpdate = (points: GeoPoint[]) => {
 	selectedPoints.value = points
@@ -230,15 +327,35 @@ const fetchRoute = async (points: GeoPoint[]) => {
 
 	try {
 		const result = await requestRoute(points)
-		routeResult.value = result
+		const validation = validateRouteAnchors(result, points)
 
-		const pointCount = points.length
-		const pointsDescription =
-			pointCount === 2 ? 'origem e destino' : `${pointCount} pontos`
+		if (validation.kind !== 'valid') {
+			routeResult.value = null
+			routeError.value = validation.message
+			pushAlert({
+				title: validation.title,
+				type: 'warning',
+				message: validation.message,
+			})
+			return
+		}
+
+		routeResult.value = result
+		const coordinatesCount = result.coordinates.length
+		const formattedPoints = coordinatesCount.toLocaleString('pt-BR')
+		const formattedDistance = Number.isFinite(result.totalCost)
+			? result.totalCost.toLocaleString('pt-BR', {
+					minimumFractionDigits: 2,
+					maximumFractionDigits: 2,
+				})
+			: null
+		const successMessage = formattedDistance
+			? `Rota calculada com ${formattedPoints} pontos e ${formattedDistance} km.`
+			: `Rota calculada com ${formattedPoints} pontos.`
 		pushAlert({
 			title: 'Rota calculada',
 			type: 'success',
-			message: `A rota com ${pointsDescription} foi gerada com sucesso.`,
+			message: successMessage,
 		})
 	} catch (err) {
 		routeResult.value = null
@@ -305,7 +422,7 @@ watch(
 
 					<div class="relative flex-1 min-h-[60vh]">
 						<MapView :max-points="2" :route-coordinates="routeCoordinates" :route-color="routeColor"
-							:is-dark-mode="isDark" @update:points="handlePointsUpdate" />
+							:point-color="pointColor" :is-dark-mode="isDark" @update:points="handlePointsUpdate" />
 
 						<div class="pointer-events-none absolute left-6 bottom-6 z-[1000] max-w-xs">
 							<div class="pointer-events-auto rounded-2xl surface-card-muted overlay-card px-5 py-4">
@@ -329,17 +446,26 @@ watch(
 					<n-flex justify="center">
 
 						<!-- Botão responsável por abrir o drawer dos pontos, mostrando uma timeline -->
-						<Button @click="isActionsDrawerOpen = true" :label="'Abrir timeline'"
-							class="metamorphous-regular" />
+						<Button @click="isActionsDrawerOpen = true" :label="'Abrir timeline'" button-type="ghost"
+							class="metamorphous-regular" 
+							color="#10b981"
+						/>
 
 						<!-- Botão responsável por abrir o drawer de personalizações -->
-						<Button @click="isCustomizationsDrawerOpen = true" :label="'Abrir personalizações'"
-							class="metamorphous-regular" />
+						<Button @click="isCustomizationsDrawerOpen = true" :label="'Abrir personalizações'" button-type="ghost"
+							class="metamorphous-regular" color="#10b981" />
 
 					</n-flex>
 				</div>
 			</main>
 		</div>
+
+		<n-flex justify="center">
+			<Button @click="isModalOpenName = true" 
+					:label="'Desenvolvido por Gabriel Mazzuco'" 
+					:button-type="'text'" 
+					class="fixed bottom-6 left-6 z-[1200]" />
+		</n-flex>
 
 
 		<!-- Drawer que mostrara todos os pontos selecionados -->
@@ -370,7 +496,7 @@ watch(
 				<n-h2 class="text-primary">Configurações gerais</n-h2>
 
 				<n-grid
-					x-gap="4" :cols="2"
+					x-gap="24" :cols="2"
 				>
 					<n-gi>
 
@@ -402,10 +528,10 @@ watch(
 				<n-h2 class="text-primary">Personalização do pontos da rota</n-h2>
 
 				<n-p class="text-secondary">
-					Altere a cor dos pontos (origem, destino e intermediários) que aparecem no mapa. A cor padrão é
+					Altere a cor dos pontos (origem, destino e intermediários) que aparecem no mapa. A cor padrão é #22C55E.
 				</n-p>
 
-				<ColorPicker v-model="routeColor" label="Cor dos pontos" :expected-color="DEFAULT_ROUTE_COLOR" @invalid="(msg) =>
+				<ColorPicker v-model="pointColor" label="Cor dos pontos" :expected-color="DEFAULT_POINT_COLOR" @invalid="(msg) =>
 					pushAlert({
 						title: 'Cor inválida',
 						type: 'warning',
@@ -416,6 +542,33 @@ watch(
 			</section>
 		</Drawer>
 
+		<!-- Modal responsável por mostrar o meu nome e da animação -->
+		<Modal
+			:show="isModalOpenName"
+			@update:show="isModalOpenName = $event"
+		>
+
+			<n-h2 class="text-primary text-center mb-4">Desenvolvido por Gabriel Mazzuco</n-h2>
+			
+			<ViewLoader />
+
+			<div class="space-y-4 mt-12">	
+				<n-p class="text-secondary text-center">
+					Este foi um projeto para o PDI - Programa de Desenvolvimento Individual do meu trabalho como desenvolvedor na Empresa de Tecnologia voltada para o Agronegócio (Aliare).
+				</n-p>
+			</div>
+
+
+			<n-flex justify="center" align="center" class="w-full h-full">
+				<n-image
+					:src="LogoAliare"
+					alt="Logo da Aliare"
+					width="250"
+					height="auto"
+				/>
+			</n-flex>
+
+		</Modal>
 
 		<!-- Div que ira conter todos os alertas do sistema -->
 		<div class="fixed top-6 right-6 z-[1200] flex w-80 flex-col gap-3">
@@ -425,3 +578,11 @@ watch(
 
 	</n-config-provider>
 </template>
+
+<!-- Retira a barra de rolagem -->
+<style scoped>
+:global(html),
+:global(body) {
+	overflow: hidden;
+}
+</style>
