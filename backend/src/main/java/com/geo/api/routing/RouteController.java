@@ -18,10 +18,17 @@ public class RouteController {
 
     @PostMapping
     public ResponseEntity<RouteResponse> calculate(@RequestBody RouteRequest request) {
-        RouteResponse response = routeService.calculateRoute(request.origin(), request.destination());
-        if (response.nodes().isEmpty()) {
-            return ResponseEntity.notFound().build();
+        try {
+            RouteResponse response = routeService.calculateRoute(
+                    request.coordinates(),
+                    request.allowApproximation()
+            );
+            if (response.nodes().isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().build();
         }
-        return ResponseEntity.ok(response);
     }
 }

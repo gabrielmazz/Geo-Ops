@@ -23,14 +23,24 @@ export async function helloApi(): Promise<string> {
 	return data.message ?? 'Hello from Spring!'
 }
 
-export async function requestRoute(points: RoutePoint[]): Promise<RouteResponse> {
+export type RequestRouteOptions = {
+	allowApproximation?: boolean
+}
+
+export async function requestRoute(
+	points: RoutePoint[],
+	options: RequestRouteOptions = {},
+): Promise<RouteResponse> {
 	const response = await fetch(`${API_BASE_URL}/api/routes`, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
 			Accept: 'application/json',
 		},
-		body: JSON.stringify({ points }),
+		body: JSON.stringify({
+			points,
+			allowApproximation: Boolean(options.allowApproximation),
+		}),
 	})
 
 	if (!response.ok) {

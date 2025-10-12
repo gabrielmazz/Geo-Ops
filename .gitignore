@@ -35,4 +35,8 @@ build/
 
 ### Scripts ### -> Toda a pasta Scripts
 scripts/
+Scripts-do-Git/
 node_modules
+
+### Logs de instalação ###
+logs/

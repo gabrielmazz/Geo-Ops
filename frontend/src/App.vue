@@ -14,6 +14,7 @@ import Drawer from './components/Drawer.vue'
 import ColorPicker from './components/ColorPicker.vue'
 import Switch from './components/Switch.vue'
 import Modal from './components/Modal.vue'
+import NumberInput from './components/NumberInput.vue'
 
 // Componente que mostra o nome junto com uma animação
 import ViewLoader from './components/ViewLoader.vue'
@@ -51,12 +52,29 @@ const selectedPoints = ref<GeoPoint[]>([])
 const routeResult = ref<RouteResponse | null>(null)
 const routeError = ref<string | null>(null)
 const routeLoading = ref(false)
+const isPointEditingEnabled = ref(false)
+const isRouteApproximationEnabled = ref(true)
 const DEFAULT_ROUTE_COLOR = '#22c55e'
 const DEFAULT_POINT_COLOR = '#22c55e'
 const routeColor = ref<string>(DEFAULT_ROUTE_COLOR)
 const pointColor = ref<string>(DEFAULT_POINT_COLOR)
 const EARTH_RADIUS_METERS = 6_371_000
 const MAX_SNAP_DISTANCE_METERS = 8_000
+const maxSelectablePoints = ref<number | null>(2)
+
+const normalizedMaxSelectablePoints = computed(() => {
+	const rawValue = maxSelectablePoints.value
+	if (rawValue === null || rawValue === undefined) {
+		return 2
+	}
+
+	const parsedValue = Number(rawValue)
+	if (!Number.isFinite(parsedValue)) {
+		return 2
+	}
+
+	return Math.min(10, Math.max(2, Math.floor(parsedValue)))
+})
 
 type AlertType = 'default' | 'info' | 'success' | 'warning' | 'error'
 
@@ -82,6 +100,34 @@ type SelectedPointDisplay = {
 const routeCoordinates = computed(() => routeResult.value?.coordinates ?? [])
 const routeNodes = computed(() => routeResult.value?.nodes ?? [])
 
+type InvalidPointDetail = {
+	role: 'origin' | 'destination' | 'waypoint'
+	index: number
+	coords: GeoPoint
+	distanceMeters: number
+}
+
+const getPointRole = (index: number, total: number): InvalidPointDetail['role'] => {
+	if (index === 0) {
+		return 'origin'
+	}
+	if (index === total - 1) {
+		return 'destination'
+	}
+	return 'waypoint'
+}
+
+const getPointLabel = (index: number, total: number): string => {
+	const role = getPointRole(index, total)
+	if (role === 'origin') {
+		return 'Origem'
+	}
+	if (role === 'destination') {
+		return 'Destino'
+	}
+	return `Ponto ${index}`
+}
+
 const toRadians = (value: number): number => (value * Math.PI) / 180
 
 const distanceBetweenPoints = (pointA: GeoPoint, pointB: GeoPoint): number => {
@@ -103,6 +149,7 @@ type RouteValidationResult =
 			kind: 'invalid-origin' | 'invalid-destination' | 'invalid-both'
 			title: string
 			message: string
+			invalidPoints?: InvalidPointDetail[]
 		}
 
 const validateRouteAnchors = (
@@ -120,44 +167,89 @@ const validateRouteAnchors = (
 
 	const originPoint = points[0]
 	const destinationPoint = points[points.length - 1]
+
+	if (!originPoint || !destinationPoint) {
+		return {
+			kind: 'invalid-both',
+			title: 'Pontos insuficientes',
+			message:
+				'Não foi possível validar a rota. Selecione novamente os pontos de origem e destino.',
+		}
+	}
+
+	const [originLat, originLon] = originPoint
+	const [destinationLat, destinationLon] = destinationPoint
+	const firstRouteCoordinate = route.coordinates[0]
+	const lastRouteCoordinate = route.coordinates[route.coordinates.length - 1]
+
 	const firstCoordinate: GeoPoint = [
-		route.coordinates[0]?.lat ?? originPoint[0],
-		route.coordinates[0]?.lon ?? originPoint[1],
+		firstRouteCoordinate?.lat ?? originLat,
+		firstRouteCoordinate?.lon ?? originLon,
 	]
 	const lastCoordinate: GeoPoint = [
-		route.coordinates[route.coordinates.length - 1]?.lat ?? destinationPoint[0],
-		route.coordinates[route.coordinates.length - 1]?.lon ?? destinationPoint[1],
+		lastRouteCoordinate?.lat ?? destinationLat,
+		lastRouteCoordinate?.lon ?? destinationLon,
 	]
 
 	const originDistance = distanceBetweenPoints(originPoint, firstCoordinate)
 	const destinationDistance = distanceBetweenPoints(destinationPoint, lastCoordinate)
 	const originInvalid = originDistance > MAX_SNAP_DISTANCE_METERS
 	const destinationInvalid = destinationDistance > MAX_SNAP_DISTANCE_METERS
+	const invalidPoints: InvalidPointDetail[] = []
 
 	if (originInvalid && destinationInvalid) {
+		invalidPoints.push(
+			{
+				role: 'origin',
+				index: 0,
+				coords: originPoint,
+				distanceMeters: originDistance,
+			},
+			{
+				role: 'destination',
+				index: points.length - 1,
+				coords: destinationPoint,
+				distanceMeters: destinationDistance,
+			},
+		)
 		return {
 			kind: 'invalid-both',
 			title: 'Pontos inválidos',
 			message:
 				'Não foi possível traçar a rota. Os dois pontos selecionados parecem estar no oceano. Escolha locais em terra.',
+			invalidPoints,
 		}
 	}
 
 	if (originInvalid) {
+		invalidPoints.push({
+			role: 'origin',
+			index: 0,
+			coords: originPoint,
+			distanceMeters: originDistance,
+		})
 		return {
 			kind: 'invalid-origin',
 			title: 'Origem inválida',
 			message:
 				'Não foi possível traçar a rota. O ponto de origem está em uma área sem acesso por terra (possivelmente oceano). Ajuste a marcação.',
+			invalidPoints,
 		}
 	}
 
 	if (destinationInvalid) {
+		invalidPoints.push({
+			role: 'destination',
+			index: points.length - 1,
+			coords: destinationPoint,
+			distanceMeters: destinationDistance,
+		})
 		return {
 			kind: 'invalid-destination',
 			title: 'Destino inválido',
 			message:
 				'Não foi possível traçar a rota. O ponto de destino está em uma área sem acesso por terra (possivelmente oceano). Ajuste a marcação.',
+			invalidPoints,
 		}
 	}
 
@@ -218,6 +310,30 @@ const routeTimelineItems = computed(() => {
 		: [originItem, ...waypointItems]
 })
 
+const maxPointsSummary = computed(() => {
+	const limit = normalizedMaxSelectablePoints.value
+	const positionsText = `${limit} ${limit === 1 ? 'posição' : 'posições'}`
+
+	if (limit <= 0) {
+		return '0 posições'
+	}
+
+	if (limit === 1) {
+		return `${positionsText} (origem)`
+	}
+
+	if (limit === 2) {
+		return `${positionsText} (origem e destino)`
+	}
+
+	const intermediateCount = limit - 2
+	const intermediateText = `${intermediateCount} ${
+		intermediateCount === 1 ? 'ponto intermediário' : 'pontos intermediários'
+	}`
+
+	return `${positionsText} (origem, ${intermediateText} e destino)`
+})
+
 // Estado do drawer de ações -> Drawer para ver os pontos que foram selecionados
 const isActionsDrawerOpen = ref(false)
 
@@ -231,14 +347,129 @@ const handlePointsUpdate = (points: GeoPoint[]) => {
 	selectedPoints.value = points
 }
 
+type PointMovedEvent = {
+	index: number
+	previous: GeoPoint
+	current: GeoPoint
+	label: string
+}
+
+const formatPoint = (point: GeoPoint) =>
+	`${point[0].toFixed(6)}, ${point[1].toFixed(6)}`
+
+const formatDistance = (meters: number): string => {
+	if (!Number.isFinite(meters)) {
+		return 'distância desconhecida'
+	}
+
+	if (meters >= 1000) {
+		return `${(meters / 1000).toFixed(2)} km`
+	}
+
+	return `${Math.round(meters)} m`
+}
+
+const handlePointMoved = ({ label, previous, current }: PointMovedEvent) => {
+	pushAlert({
+		title: `${label} ajustado`,
+		type: 'info',
+		message: `Posição atualizada de ${formatPoint(previous)} para ${formatPoint(current)}.`,
+	})
+}
+
+const handleMaxPointsChange = () => {
+	selectedPoints.value = []
+	resetRouteState()
+}
+
+const isRouteComputationError = (error: unknown): boolean =>
+	error instanceof Error && error.message.startsWith('Falha ao calcular rota')
+
+const diagnoseRouteFailure = async (points: GeoPoint[]): Promise<InvalidPointDetail[]> => {
+	if (points.length < 2) {
+		return []
+	}
+
+	const allowApproximation = isRouteApproximationEnabled.value
+	const total = points.length
+	const invalidIndices = new Set<number>()
+
+	// Remove individual waypoints to detect culpados.
+	for (let index = 1; index < total - 1; index += 1) {
+		const subset = points.filter((_, currentIndex) => currentIndex !== index) as GeoPoint[]
+		try {
+			await requestRoute(subset, { allowApproximation })
+			invalidIndices.add(index)
+		} catch (error) {
+			if (!isRouteComputationError(error)) {
+				throw error
+			}
+		}
+	}
+
+	if (invalidIndices.size > 0) {
+		return Array.from(invalidIndices).map((index) => ({
+			role: getPointRole(index, total),
+			index,
+			coords: points[index]!,
+			distanceMeters: Number.NaN,
+		}))
+	}
+
+	// Avalia segmentos consecutivos para encontrar trechos inviáveis.
+	const pointStats = points.map(() => ({ success: 0, failure: 0 }))
+
+	for (let index = 0; index < total - 1; index += 1) {
+		const segment: GeoPoint[] = [points[index]!, points[index + 1]!]
+		const currentStats = pointStats[index]!
+		const nextStats = pointStats[index + 1]!
+
+		try {
+			await requestRoute(segment, { allowApproximation })
+			currentStats.success += 1
+			nextStats.success += 1
+		} catch (error) {
+			if (!isRouteComputationError(error)) {
+				throw error
+			}
+			currentStats.failure += 1
+			nextStats.failure += 1
+		}
+	}
+
+	pointStats.forEach((stat, index) => {
+		if (stat.failure === 0) {
+			return
+		}
+
+		const isEndpoint = index === 0 || index === total - 1
+		if (isEndpoint || stat.success === 0 || stat.failure >= stat.success) {
+			invalidIndices.add(index)
+		}
+	})
+
+	return Array.from(invalidIndices).map((index) => ({
+		role: getPointRole(index, total),
+		index,
+		coords: points[index]!,
+		distanceMeters: Number.NaN,
+	}))
+}
+
+let routeRequestToken = 0
+
+const resetRouteState = () => {
+	routeRequestToken += 1
+	routeResult.value = null
+	routeError.value = null
+	routeLoading.value = false
+}
+
 const selectedPointsDisplay = computed<SelectedPointDisplay[]>(() => {
 	const points = selectedPoints.value
 	if (!points.length) {
 		return []
 	}
-
-	const lastIndex = points.length - 1
-	let waypointCount = 0
 
 	const roleClasses: Record<SelectedPointDisplay['role'], string> = {
 		origin: 'point-pill point-pill--origin',
@@ -248,19 +479,8 @@ const selectedPointsDisplay = computed<SelectedPointDisplay[]>(() => {
 
 	return points
 		.map<SelectedPointDisplay>((point, index) => {
-			const role: SelectedPointDisplay['role'] =
-				index === 0 ? 'origin' : index === lastIndex ? 'destination' : 'waypoint'
-
-			let label: string
-			if (role === 'origin') {
-				label = 'Origem'
-			} else if (role === 'destination') {
-				label = 'Destino'
-			} else {
-				waypointCount += 1
-				label = `Ponto ${waypointCount}`
-			}
-
+			const role = getPointRole(index, points.length)
+			const label = getPointLabel(index, points.length)
 			return {
 				key: `${point[0]}-${point[1]}-${index}`,
 				coords: point,
@@ -316,18 +536,23 @@ const removeAlert = (id: number) => {
 
 const fetchRoute = async (points: GeoPoint[]) => {
 	if (points.length < 2) {
-		routeResult.value = null
-		routeError.value = null
-		routeLoading.value = false
+		resetRouteState()
 		return
 	}
 
+	const requestToken = ++routeRequestToken
 	routeLoading.value = true
 	routeError.value = null
 
 	try {
-		const result = await requestRoute(points)
+		const result = await requestRoute(points, {
+			allowApproximation: isRouteApproximationEnabled.value,
+		})
 		const validation = validateRouteAnchors(result, points)
+
+		if (requestToken !== routeRequestToken) {
+			return
+		}
 
 		if (validation.kind !== 'valid') {
 			routeResult.value = null
@@ -337,6 +562,19 @@ const fetchRoute = async (points: GeoPoint[]) => {
 				type: 'warning',
 				message: validation.message,
 			})
+			if (validation.invalidPoints?.length) {
+				validation.invalidPoints.forEach((detail) => {
+					const label = getPointLabel(detail.index, points.length)
+					const formattedCoords = formatPoint(detail.coords)
+					const distanceText = formatDistance(detail.distanceMeters)
+
+					pushAlert({
+						title: `${label} fora da área válida`,
+						type: 'warning',
+						message: `${label} em ${formattedCoords} está a ${distanceText} do trajeto disponível. Arraste o marcador para um local em terra firme.`,
+					})
+				})
+			}
 			return
 		}
 
@@ -358,23 +596,60 @@ const fetchRoute = async (points: GeoPoint[]) => {
 			message: successMessage,
 		})
 	} catch (err) {
+		if (requestToken !== routeRequestToken) {
+			return
+		}
+
 		routeResult.value = null
 		routeError.value = err instanceof Error ? err.message : String(err)
 
-		const message =
+		const fallbackMessage =
 			routeError.value ||
 			'Ocorreu um erro desconhecido ao calcular a rota. Verifique a conexão com o backend.'
 		pushAlert({
 			title: 'Erro ao calcular a rota',
 			type: 'error',
-			message,
+			message: fallbackMessage,
 		})
+
+		try {
+			const diagnostics = await diagnoseRouteFailure(points)
+			if (requestToken === routeRequestToken) {
+				diagnostics.forEach((detail) => {
+					const label = getPointLabel(detail.index, points.length)
+					const formattedCoords = formatPoint(detail.coords)
+					const distanceText = formatDistance(detail.distanceMeters)
+
+					pushAlert({
+						title: `${label} precisa ser ajustado`,
+						type: 'warning',
+						message: `${label} em ${formattedCoords} impede o cálculo da rota (${distanceText}). Arraste o marcador para uma via acessível e tente novamente.`,
+					})
+				})
+			}
+		} catch {
+			// Ignora falhas de diagnóstico
+		}
 	} finally {
-		routeLoading.value = false
+		if (requestToken === routeRequestToken) {
+			routeLoading.value = false
+		}
 	}
 }
 
-const dismissRouteError = () => {
+const evaluateRouteComputation = () => {
+	const points = selectedPoints.value
+	const limit = normalizedMaxSelectablePoints.value
+
+	if (points.length < 2 || points.length !== limit) {
+		resetRouteState()
+		return
+	}
+
+	void fetchRoute(points)
+}
+
+function dismissRouteError(): void {
 	routeError.value = null
 }
 
@@ -398,11 +673,30 @@ onMounted(() => {
 
 watch(
 	selectedPoints,
-	(points) => {
-		void fetchRoute(points)
+	() => {
+		evaluateRouteComputation()
 	},
 	{ deep: true },
 )
+
+watch(
+	normalizedMaxSelectablePoints,
+	(normalized) => {
+		if (maxSelectablePoints.value !== normalized) {
+			maxSelectablePoints.value = normalized
+		}
+		evaluateRouteComputation()
+	},
+)
+
+watch(
+	() => isRouteApproximationEnabled.value,
+	() => {
+		evaluateRouteComputation()
+	},
+)
+
+evaluateRouteComputation()
 </script>
 
 <template>
@@ -411,22 +705,20 @@ watch(
 
 			<main class="flex-1 flex flex-col p-8">
 				<div
-					class="flex-1 w-full rounded-3xl surface-card backdrop-blur px-10 py-12 space-y-6 flex flex-col">
-					<div class="space-y-2 text-primary">
-						<h1 class="text-2xl font-semibold">Selecione os pontos</h1>
-						<p class="text-secondary">
-							Clique no mapa para definir até duas posições (origem e destino). Esses valores serão
-							enviados ao backend Java que consulta o OSRM para retornar o melhor caminho disponível.
-						</p>
-					</div>
-
+					class="flex-1 w-full rounded-3xl surface-card backdrop-blur px-10 pt-12 pb-6 space-y-6 flex flex-col">
+					
 					<div class="relative flex-1 min-h-[60vh]">
-						<MapView :max-points="2" :route-coordinates="routeCoordinates" :route-color="routeColor"
-							:point-color="pointColor" :is-dark-mode="isDark" @update:points="handlePointsUpdate" />
+						<MapView :max-points="normalizedMaxSelectablePoints" :route-coordinates="routeCoordinates" :route-color="routeColor"
+							:point-color="pointColor" :is-dark-mode="isDark" :enable-point-editing="isPointEditingEnabled" @update:points="handlePointsUpdate"
+							@point-moved="handlePointMoved" />
 
 						<div class="pointer-events-none absolute left-6 bottom-6 z-[1000] max-w-xs">
 							<div class="pointer-events-auto rounded-2xl surface-card-muted overlay-card px-5 py-4">
 								<h2 class="text-base font-semibold text-primary">Pontos selecionados</h2>
+								<p class="mt-1 text-xs text-secondary">
+									{{ selectedPoints.length }} / {{ normalizedMaxSelectablePoints }}
+									{{ selectedPoints.length === 1 ? 'ponto selecionado' : 'pontos selecionados' }}
+								</p>
 								<div v-if="!selectedPoints.length" class="mt-2 text-sm text-secondary">
 									Nenhum ponto selecionado.
 								</div>
@@ -442,20 +734,26 @@ watch(
 						</div>
 					</div>
 
-					<!-- Div responsavel pelos botões e ações que serão possiveis executar no sistema -->
-					<n-flex justify="center">
+						<!-- Div responsavel pelos botões e ações que serão possiveis executar no sistema -->
+						<n-flex justify="center" align="center" class="w-full gap-4 pt-2 pb-0">
+							<!-- Botão responsável por abrir o drawer dos pontos, mostrando uma timeline -->
+							<Button
+								@click="isActionsDrawerOpen = true"
+								:label="'Abrir timeline'"
+								button-type="ghost"
+								class="metamorphous-regular"
+								color="#10b981"
+							/>
 
-						<!-- Botão responsável por abrir o drawer dos pontos, mostrando uma timeline -->
-						<Button @click="isActionsDrawerOpen = true" :label="'Abrir timeline'" button-type="ghost"
-							class="metamorphous-regular" 
-							color="#10b981"
-						/>
-
-						<!-- Botão responsável por abrir o drawer de personalizações -->
-						<Button @click="isCustomizationsDrawerOpen = true" :label="'Abrir personalizações'" button-type="ghost"
-							class="metamorphous-regular" color="#10b981" />
-
-					</n-flex>
+							<!-- Botão responsável por abrir o drawer de personalizações -->
+							<Button
+								@click="isCustomizationsDrawerOpen = true"
+								:label="'Abrir personalizações'"
+								button-type="ghost"
+								class="metamorphous-regular"
+								color="#10b981"
+							/>
+						</n-flex>
 				</div>
 			</main>
 		</div>
@@ -484,7 +782,9 @@ watch(
 
 				<RouteTimeline v-else-if="routeTimelineItems.length" :items="routeTimelineItems" />
 
-				<div v-else class="text-secondary">Selecione dois pontos para visualizar a rota.</div>
+				<div v-else class="text-secondary">
+					Selecione todos os pontos configurados para visualizar a rota.
+				</div>
 			</section>
 
 		</Drawer>
@@ -514,6 +814,27 @@ watch(
 
 				</n-grid>
 
+				<n-grid
+					x-gap="24" :cols="2"
+				>
+					<n-gi>
+
+						<Switch v-model="isPointEditingEnabled" label="Edição dos pontos"
+							description="Permite arrastar os marcadores no mapa para ajustar suas posições." />
+						
+
+					</n-gi>
+
+					<n-gi>
+
+						<Switch v-model="isRouteApproximationEnabled" label="Aproximação das rotas"
+							description="Ajusta automaticamente os pontos para vias próximas ao calcular a rota." />
+
+					</n-gi>
+
+				</n-grid>
+
+
 
 				<n-h2 class="text-primary">Personalização da cor da rota</n-h2>
 
@@ -538,6 +859,14 @@ watch(
 						message: msg,
 					})
 				" />
+
+				 <!-- Input responsavel por limitar quantidade de pontos que o usuario pode clicar no mapa para definir
+				  	  uma rota entre eles --> 
+				<NumberInput v-model="maxSelectablePoints" label="Quantidade máxima de pontos"
+					description="Defina a quantidade máxima de pontos que podem ser selecionados no mapa para traçar uma rota entre eles."
+					:min="2" :max="6" 
+					@change="handleMaxPointsChange"
+				/>
 
 			</section>
 		</Drawer>
