@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { darkTheme, type GlobalThemeOverrides } from 'naive-ui'
 import { helloApi, requestRoute, type RouteResponse } from './services/api'
 
@@ -25,6 +25,9 @@ import LogoAliare from './assets/images/logos/logo-aliare.png'
 import { useThemeStore } from './stores/theme'
 
 type GeoPoint = [number, number]
+type MapViewExposed = {
+	getContainer: () => HTMLDivElement | null
+}
 
 const themeStore = useThemeStore()
 const isDark = computed({
@@ -61,6 +64,27 @@ const pointColor = ref<string>(DEFAULT_POINT_COLOR)
 const EARTH_RADIUS_METERS = 6_371_000
 const MAX_SNAP_DISTANCE_METERS = 8_000
 const maxSelectablePoints = ref<number | null>(2)
+const mapResetToken = ref(0)
+const mapViewRef = ref<MapViewExposed | null>(null)
+const introModalThemeClass = computed(() => (isDark.value ? 'intro-modal--dark' : 'intro-modal--light'))
+const floatingPanelThemeClass = computed(() =>
+	isDark.value ? 'floating-panel--dark' : 'floating-panel--light',
+)
+
+type QuickCommand = {
+	keyLabel: string
+	description: string
+}
+
+const quickCommands: QuickCommand[] = [
+	{ keyLabel: 'R', description: 'Redefinir pontos selecionados.' },
+	{ keyLabel: 'E', description: 'Editar pontos diretamente no mapa (arrastar marcadores).' },
+	{ keyLabel: 'A', description: 'Gerar pontos aleatórios válidos em todo o mapa.' },
+	{ keyLabel: 'C', description: 'Abrir ou fechar o painel de personalizações.' },
+	{ keyLabel: 'I', description: 'Aleatorizar a cor da rota e dos pontos.' },
+	{ keyLabel: 'O', description: 'Restaurar a cor padrão da rota e dos pontos.' },
+	{ keyLabel: 'P', description: 'Salvar uma imagem do mapa atual com rota e pontos.' },
+]
 
 const normalizedMaxSelectablePoints = computed(() => {
 	const rawValue = maxSelectablePoints.value
@@ -142,6 +166,117 @@ const distanceBetweenPoints = (pointA: GeoPoint, pointB: GeoPoint): number => {
 		Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLon / 2) ** 2
 	return 2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(Math.max(a, 0)))
 }
+
+const generateRandomHexColor = (): string =>
+	`#${Math.floor(Math.random() * 0xffffff)
+		.toString(16)
+		.padStart(6, '0')}`
+
+const isTypingTarget = (event: KeyboardEvent): boolean => {
+	const target = event.target
+	if (!(target instanceof HTMLElement)) {
+		return false
+	}
+
+	if (target.isContentEditable) {
+		return true
+	}
+
+	const tagName = target.tagName
+	return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT'
+}
+
+const LAND_REGIONS = [
+	{ lat: { min: -23.9, max: -22.7 }, lon: { min: -47.2, max: -45.5 } }, 	// São Paulo / Campinas
+	{ lat: { min: -23.1, max: -22.7 }, lon: { min: -43.8, max: -43.0 } }, 	// Rio de Janeiro
+	{ lat: { min: -20.1, max: -19.6 }, lon: { min: -44.1, max: -43.7 } }, 	// Belo Horizonte
+	{ lat: { min: -15.9, max: -15.4 }, lon: { min: -48.1, max: -47.7 } }, 	// Brasília
+	{ lat: { min: -16.0, max: -15.6 }, lon: { min: -49.4, max: -48.8 } }, 	// Goiânia
+	{ lat: { min: -25.6, max: -25.2 }, lon: { min: -49.4, max: -48.9 } }, 	// Curitiba
+	{ lat: { min: -30.2, max: -29.9 }, lon: { min: -51.3, max: -50.9 } }, 	// Porto Alegre
+	{ lat: { min: -12.9, max: -12.8 }, lon: { min: -38.5, max: -38.3 } }, 	// Salvador
+	{ lat: { min: -8.1, max: -7.9 }, lon: { min: -35.1, max: -34.9 } }, 	// Recife
+	{ lat: { min: -3.9, max: -3.6 }, lon: { min: -38.7, max: -38.3 } }, 	// Fortaleza
+	{ lat: { min: -1.5, max: -1.1 }, lon: { min: -48.6, max: -48.1 } }, 	// Belém
+	{ lat: { min: -20.6, max: -20.2 }, lon: { min: -54.8, max: -54.4 } }, 	// Campo Grande
+] as const
+
+type LandRegion = (typeof LAND_REGIONS)[number]
+
+const randomBetween = (min: number, max: number) => min + Math.random() * (max - min)
+
+const createRandomGeoPoint = (region?: LandRegion): GeoPoint => {
+	const regionIndex = Math.floor(Math.random() * LAND_REGIONS.length)
+	const targetRegion: LandRegion = region ?? LAND_REGIONS[regionIndex]!
+	const lat = randomBetween(targetRegion.lat.min, targetRegion.lat.max)
+	const lon = randomBetween(targetRegion.lon.min, targetRegion.lon.max)
+	return [Number(lat.toFixed(6)), Number(lon.toFixed(6))]
+}
+
+const generateRandomPoints = (count: number): GeoPoint[] => {
+	const points: GeoPoint[] = []
+	const usedRegionIndices = new Set<number>()
+	const uniqueKeys = new Set<string>()
+
+	while (points.length < count) {
+		let regionIndex: number
+		if (points.length < LAND_REGIONS.length) {
+			const availableIndices = LAND_REGIONS.map((_, index) => index).filter(
+				(index) => !usedRegionIndices.has(index),
+			)
+
+			if (availableIndices.length > 0) {
+				regionIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)]!
+				usedRegionIndices.add(regionIndex)
+			} else {
+				regionIndex = Math.floor(Math.random() * LAND_REGIONS.length)
+			}
+		} else {
+			regionIndex = Math.floor(Math.random() * LAND_REGIONS.length)
+		}
+
+		const region = LAND_REGIONS[regionIndex]!
+		const point = createRandomGeoPoint(region)
+		const key = point.join(',')
+		if (uniqueKeys.has(key)) {
+			continue
+		}
+
+		points.push(point)
+		uniqueKeys.add(key)
+	}
+
+	return points
+}
+
+const MAX_RANDOM_ROUTE_ATTEMPTS = 12
+
+type IntroHighlight = {
+	icon: string
+	title: string
+	description: string
+}
+
+const introHighlights: IntroHighlight[] = [
+	{
+		icon: '📍',
+		title: 'Marque pontos estratégicos',
+		description:
+			'Selecione fazendas, centros de distribuição e destinos diretamente no mapa interativo.',
+	},
+	{
+		icon: '🧭',
+		title: 'Rotas otimizadas automaticamente',
+		description:
+			'Combine a roteirização inteligente com ajustes automáticos para encontrar o melhor trajeto.',
+	},
+	{
+		icon: '🎨',
+		title: 'Personalize do seu jeito',
+		description:
+			'Ajuste cores, edição de pontos e preferências de aproximação para alinhar o Geo-Ops à sua operação.',
+	},
+]
 
 type RouteValidationResult =
 	| { kind: 'valid' }
@@ -343,6 +478,9 @@ const isCustomizationsDrawerOpen = ref(false)
 // Estado do modal que mostra o meu nome e a animação
 const isModalOpenName = ref(false)
 
+// Estado do modal para mostrar sempre que carregar a tela pela primeira vez
+const isModalOpenFirstLoad = ref(true)
+
 const handlePointsUpdate = (points: GeoPoint[]) => {
 	selectedPoints.value = points
 }
@@ -375,11 +513,6 @@ const handlePointMoved = ({ label, previous, current }: PointMovedEvent) => {
 		type: 'info',
 		message: `Posição atualizada de ${formatPoint(previous)} para ${formatPoint(current)}.`,
 	})
-}
-
-const handleMaxPointsChange = () => {
-	selectedPoints.value = []
-	resetRouteState()
 }
 
 const isRouteComputationError = (error: unknown): boolean =>
@@ -457,6 +590,7 @@ const diagnoseRouteFailure = async (points: GeoPoint[]): Promise<InvalidPointDet
 }
 
 let routeRequestToken = 0
+let skipNextRouteComputation = false
 
 const resetRouteState = () => {
 	routeRequestToken += 1
@@ -532,6 +666,247 @@ const removeAlert = (id: number) => {
 		}
 		return acc.concat(alert)
 	}, [])
+}
+
+const resetSelectedPoints = ({ silent }: { silent?: boolean } = {}) => {
+	const hadPoints = selectedPoints.value.length > 0
+
+	if (hadPoints) {
+		selectedPoints.value = []
+	}
+
+	mapResetToken.value += 1
+	resetRouteState()
+
+	if (!silent) {
+		if (hadPoints) {
+			pushAlert({
+				title: 'Pontos redefinidos',
+				type: 'info',
+				message: 'Todos os marcadores foram removidos. Selecione novos pontos no mapa.',
+			})
+		} else {
+			pushAlert({
+				title: 'Nada para redefinir',
+				type: 'info',
+				message: 'Nenhum ponto estava selecionado.',
+				durationMs: 3000,
+			})
+		}
+	}
+}
+
+const handleMaxPointsChange = () => {
+	resetSelectedPoints({ silent: true })
+}
+
+const togglePointEditing = () => {
+	isPointEditingEnabled.value = !isPointEditingEnabled.value
+	pushAlert({
+		title: 'Edição de pontos',
+		type: 'info',
+		message: isPointEditingEnabled.value
+			? 'Modo de edição ativado. Arraste os marcadores para ajustar a rota.'
+			: 'Modo de edição desativado. Os marcadores voltam a ficar fixos.',
+		durationMs: 4000,
+	})
+}
+
+const randomizeSelectedPointsPositions = async () => {
+	if (routeLoading.value) {
+		return
+	}
+
+	const limit = normalizedMaxSelectablePoints.value
+	const count = Math.max(2, limit)
+	const allowApproximation = isRouteApproximationEnabled.value
+
+	routeError.value = null
+	const randomizationToken = ++routeRequestToken
+	routeLoading.value = true
+
+	for (let attempt = 1; attempt <= MAX_RANDOM_ROUTE_ATTEMPTS; attempt += 1) {
+		const candidatePoints = generateRandomPoints(count)
+		try {
+			const result = await requestRoute(candidatePoints, { allowApproximation })
+			if (randomizationToken !== routeRequestToken) {
+				return
+			}
+
+			skipNextRouteComputation = true
+			routeResult.value = result
+			selectedPoints.value = candidatePoints
+			routeLoading.value = false
+
+			pushAlert({
+				title: 'Rota aleatória pronta',
+				type: 'success',
+				message: `Uma rota válida com ${count} ponto${count > 1 ? 's' : ''} foi encontrada na tentativa ${
+					attempt
+				}.`,
+				durationMs: 5000,
+			})
+			return
+		} catch (error) {
+			if (!isRouteComputationError(error)) {
+				if (randomizationToken === routeRequestToken) {
+					routeLoading.value = false
+				}
+				pushAlert({
+					title: 'Falha inesperada',
+					type: 'error',
+					message:
+						error instanceof Error
+							? error.message
+							: 'Não foi possível gerar uma rota aleatória devido a um erro inesperado.',
+				})
+				return
+			}
+		}
+	}
+
+	if (randomizationToken === routeRequestToken) {
+		routeLoading.value = false
+		pushAlert({
+			title: 'Não foi possível gerar a rota',
+			type: 'error',
+			message: 'Nenhuma rota válida foi encontrada após várias tentativas. Tente novamente.',
+		})
+	}
+}
+
+const toggleCustomizationsDrawer = () => {
+	isCustomizationsDrawerOpen.value = !isCustomizationsDrawerOpen.value
+}
+
+const randomizeRouteAndPointColors = () => {
+	const nextRouteColor = generateRandomHexColor()
+	let nextPointColor = generateRandomHexColor()
+
+	if (nextPointColor === nextRouteColor) {
+		nextPointColor = generateRandomHexColor()
+	}
+
+	routeColor.value = nextRouteColor
+	pointColor.value = nextPointColor
+
+	pushAlert({
+		title: 'Cores aleatórias aplicadas',
+		type: 'success',
+		message: 'Cor da rota e dos pontos atualizadas aleatoriamente.',
+	})
+}
+
+const resetRouteAndPointColors = () => {
+	const wasRouteChanged = routeColor.value !== DEFAULT_ROUTE_COLOR
+	const wasPointChanged = pointColor.value !== DEFAULT_POINT_COLOR
+
+	if (!wasRouteChanged && !wasPointChanged) {
+		pushAlert({
+			title: 'Cores já estão padrão',
+			type: 'info',
+			message: 'A rota e os pontos já utilizam as cores padrão.',
+		})
+		return
+	}
+
+	routeColor.value = DEFAULT_ROUTE_COLOR
+	pointColor.value = DEFAULT_POINT_COLOR
+
+	pushAlert({
+		title: 'Cores redefinidas',
+		type: 'info',
+		message: 'A cor da rota e dos pontos voltou para o padrão.',
+	})
+}
+
+const saveMapSnapshot = async () => {
+	const container = mapViewRef.value?.getContainer()
+	if (!container) {
+		pushAlert({
+			title: 'Mapa indisponível',
+			type: 'error',
+			message: 'Não foi possível localizar o mapa para salvar a imagem.',
+		})
+		return
+	}
+
+	try {
+		const { toPng } = await import('html-to-image')
+		const dataUrl = await toPng(container, {
+			cacheBust: true,
+			pixelRatio: window.devicePixelRatio ?? 1,
+		})
+
+		const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+		const link = document.createElement('a')
+		link.href = dataUrl
+		link.download = `geo-ops-map-${timestamp}.png`
+		link.click()
+
+		pushAlert({
+			title: 'Imagem salva',
+			type: 'success',
+			message: 'Uma imagem do mapa foi gerada e baixada automaticamente.',
+		})
+	} catch (error) {
+		const message =
+			error instanceof Error ? error.message : 'Falha desconhecida ao gerar a imagem.'
+		pushAlert({
+			title: 'Erro ao salvar imagem',
+			type: 'error',
+			message,
+		})
+	}
+}
+
+const handleGlobalKeydown = (event: KeyboardEvent) => {
+	if (event.defaultPrevented) {
+		return
+	}
+
+	if (isTypingTarget(event)) {
+		return
+	}
+
+	const key = event.key.toLowerCase()
+
+	switch (key) {
+		case 'i':
+			event.preventDefault()
+			randomizeRouteAndPointColors()
+			break
+		case 'o':
+			event.preventDefault()
+			resetRouteAndPointColors()
+			break
+		case 'p':
+			event.preventDefault()
+			void saveMapSnapshot()
+			break
+		case 'r':
+			resetSelectedPoints()
+			break
+		case 'e':
+			togglePointEditing()
+			break
+		case 'a':
+			void randomizeSelectedPointsPositions()
+			break
+		case 'c':
+			toggleCustomizationsDrawer()
+			break
+		default:
+	}
+}
+
+const closeWelcomeModal = () => {
+	isModalOpenFirstLoad.value = false
+}
+
+const openPersonalizationsFromIntro = () => {
+	isModalOpenFirstLoad.value = false
+	isCustomizationsDrawerOpen.value = true
 }
 
 const fetchRoute = async (points: GeoPoint[]) => {
@@ -638,6 +1013,11 @@ const fetchRoute = async (points: GeoPoint[]) => {
 }
 
 const evaluateRouteComputation = () => {
+	if (skipNextRouteComputation) {
+		skipNextRouteComputation = false
+		return
+	}
+
 	const points = selectedPoints.value
 	const limit = normalizedMaxSelectablePoints.value
 
@@ -669,6 +1049,11 @@ const loadGreeting = async () => {
 onMounted(() => {
 	themeStore.initialize()
 	void loadGreeting()
+	window.addEventListener('keydown', handleGlobalKeydown)
+})
+
+onBeforeUnmount(() => {
+	window.removeEventListener('keydown', handleGlobalKeydown)
 })
 
 watch(
@@ -708,28 +1093,77 @@ evaluateRouteComputation()
 					class="flex-1 w-full rounded-3xl surface-card backdrop-blur px-10 pt-12 pb-6 space-y-6 flex flex-col">
 					
 					<div class="relative flex-1 min-h-[60vh]">
-						<MapView :max-points="normalizedMaxSelectablePoints" :route-coordinates="routeCoordinates" :route-color="routeColor"
-							:point-color="pointColor" :is-dark-mode="isDark" :enable-point-editing="isPointEditingEnabled" @update:points="handlePointsUpdate"
-							@point-moved="handlePointMoved" />
+						<MapView
+							ref="mapViewRef"
+							:points="selectedPoints"
+							:reset-token="mapResetToken"
+							:max-points="normalizedMaxSelectablePoints"
+							:route-coordinates="routeCoordinates"
+							:route-color="routeColor"
+							:point-color="pointColor"
+							:is-dark-mode="isDark"
+							:enable-point-editing="isPointEditingEnabled"
+							@update:points="handlePointsUpdate"
+							@point-moved="handlePointMoved"
+						/>
 
+						<!-- Painel para mostrar os pontos selecionados no mapa -->
 						<div class="pointer-events-none absolute left-6 bottom-6 z-[1000] max-w-xs">
-							<div class="pointer-events-auto rounded-2xl surface-card-muted overlay-card px-5 py-4">
-								<h2 class="text-base font-semibold text-primary">Pontos selecionados</h2>
-								<p class="mt-1 text-xs text-secondary">
-									{{ selectedPoints.length }} / {{ normalizedMaxSelectablePoints }}
-									{{ selectedPoints.length === 1 ? 'ponto selecionado' : 'pontos selecionados' }}
-								</p>
-								<div v-if="!selectedPoints.length" class="mt-2 text-sm text-secondary">
-									Nenhum ponto selecionado.
+							<div class="floating-panel pointer-events-auto selected-points-panel" :class="floatingPanelThemeClass">
+								<span class="floating-panel__glow floating-panel__glow--primary" aria-hidden="true"></span>
+								<span class="floating-panel__glow floating-panel__glow--secondary" aria-hidden="true"></span>
+
+								<div class="floating-panel__inner">
+									<header class="floating-panel__header">
+										<h2 class="floating-panel__title">Pontos selecionados</h2>
+										<p class="floating-panel__subtitle selected-points__counter">
+											{{ selectedPoints.length }} / {{ normalizedMaxSelectablePoints }}
+											{{ selectedPoints.length === 1 ? 'ponto selecionado' : 'pontos selecionados' }}
+										</p>
+									</header>
+
+									<div class="selected-points__content">
+										<p v-if="!selectedPoints.length" class="selected-points__empty">
+											Nenhum ponto selecionado.
+										</p>
+										<ul v-else class="selected-points__list">
+											<li v-for="item in selectedPointsDisplay" :key="item.key" :class="item.classes">
+												<div class="font-medium">{{ item.label }}</div>
+												<div class="point-pill__coords">
+													{{ item.coords[0].toFixed(6) }}, {{ item.coords[1].toFixed(6) }}
+												</div>
+											</li>
+										</ul>
+									</div>
 								</div>
-								<ol v-else class="mt-3 space-y-1.5">
-									<li v-for="item in selectedPointsDisplay" :key="item.key" :class="item.classes">
-										<div class="font-medium">{{ item.label }}</div>
-										<div class="point-pill__coords">
-											{{ item.coords[0].toFixed(6) }}, {{ item.coords[1].toFixed(6) }}
-										</div>
-									</li>
-								</ol>
+							</div>
+						</div>
+
+						<!-- Div do lado direito na parte de baixo para mostrar alguns comandos e atalhos que podem ser utilizados -->
+						<div class="pointer-events-none absolute right-6 bottom-6 z-[1000] max-w-xs">
+							<div class="floating-panel pointer-events-auto" :class="floatingPanelThemeClass">
+								<span class="floating-panel__glow floating-panel__glow--primary" aria-hidden="true"></span>
+								<span class="floating-panel__glow floating-panel__glow--secondary" aria-hidden="true"></span>
+
+								<div class="floating-panel__inner">
+									<header class="floating-panel__header">
+										<h2 class="floating-panel__title">Instruções e comandos rápidos</h2>
+										<p class="floating-panel__subtitle">
+											Use os atalhos para ajustar rotas e pontos sem interromper o fluxo.
+										</p>
+									</header>
+
+									<ul class="quick-commands">
+										<li v-for="command in quickCommands" :key="command.keyLabel" class="quick-commands__item">
+											<span class="quick-commands__key">{{ command.keyLabel }}</span>
+											<span class="quick-commands__description">{{ command.description }}</span>
+										</li>
+									</ul>
+
+									<p class="floating-panel__footer">
+										Combine os atalhos para configurar rotas em segundos.
+									</p>
+								</div>
 							</div>
 						</div>
 					</div>
@@ -899,6 +1333,66 @@ evaluateRouteComputation()
 
 		</Modal>
 
+		<!-- Modal que sempre aparece quando carrega a tela pela primeira vez, introduzindo o sistema -->
+		<Modal
+			:show="isModalOpenFirstLoad"
+			@update:show="isModalOpenFirstLoad = $event"
+		>
+			<div class="intro-modal" :class="introModalThemeClass">
+				<span class="intro-modal__glow intro-modal__glow--primary" aria-hidden="true"></span>
+				<span class="intro-modal__glow intro-modal__glow--secondary" aria-hidden="true"></span>
+
+				<div class="intro-modal__inner">
+					<div class="intro-header">
+						<span class="intro-badge">Geo-Ops · Agronegócio</span>
+						<h2 class="intro-title">Bem-vindo ao Geo-Ops</h2>
+						<p class="intro-subtitle">
+							Planeje rotas inteligentes, conecte operações em campo e tome decisões com confiança.
+						</p>
+					</div>
+
+					<n-divider dashed />
+
+					<div class="intro-highlights">
+						<article v-for="highlight in introHighlights" :key="highlight.title" class="intro-highlight">
+							<div class="intro-highlight__icon" aria-hidden="true">
+								{{ highlight.icon }}
+							</div>
+							<div class="intro-highlight__content">
+								<h3 class="intro-highlight__title">
+									{{ highlight.title }}
+								</h3>
+								<p class="intro-highlight__description">
+									{{ highlight.description }}
+								</p>
+							</div>
+						</article>
+					</div>
+
+					<n-divider dashed />
+
+					<div class="intro-footer">
+						<p class="intro-note">
+							Dica: utilize o atalho <strong>A</strong> para gerar rotas aleatórias com pontos válidos em todo o Brasil.
+						</p>
+						<div class="intro-actions">
+							<Button
+								@click="closeWelcomeModal"
+								:label="'Explorar agora'"
+								color="#2563eb"
+							/>
+							<Button
+								@click="openPersonalizationsFromIntro"
+								:label="'Personalizar interface'"
+								button-type="ghost"
+								color="#22c55e"
+							/>
+						</div>
+					</div>
+				</div>
+			</div>
+		</Modal>
+
 		<!-- Div que ira conter todos os alertas do sistema -->
 		<div class="fixed top-6 right-6 z-[1200] flex w-80 flex-col gap-3">
 			<Alert v-for="alert in alerts" :key="alert.id" :title="alert.title" :type="alert.type"
@@ -913,5 +1407,336 @@ evaluateRouteComputation()
 :global(html),
 :global(body) {
 	overflow: hidden;
+}
+
+.floating-panel {
+	position: relative;
+	padding: 1px;
+	border-radius: 28px;
+	background: linear-gradient(135deg, rgba(37, 99, 235, 0.35), rgba(16, 185, 129, 0.4));
+	box-shadow: 0 24px 48px rgba(15, 23, 42, 0.22);
+	overflow: hidden;
+}
+
+.floating-panel__inner {
+	position: relative;
+	border-radius: 27px;
+	padding: 1.5rem;
+	backdrop-filter: blur(18px);
+}
+
+.floating-panel--light .floating-panel__inner {
+	background: rgba(255, 255, 255, 0.96);
+	color: #0f172a;
+}
+
+.floating-panel--dark .floating-panel__inner {
+	background: rgba(11, 15, 25, 0.9);
+	color: #f8fafc;
+}
+
+.floating-panel__glow {
+	position: absolute;
+	border-radius: 9999px;
+	filter: blur(80px);
+	opacity: 0.6;
+}
+
+.floating-panel__glow--primary {
+	top: -70px;
+	right: -40px;
+	width: 180px;
+	height: 180px;
+	background: rgba(37, 99, 235, 0.8);
+}
+
+.floating-panel__glow--secondary {
+	bottom: -70px;
+	left: -50px;
+	width: 160px;
+	height: 160px;
+	background: rgba(16, 185, 129, 0.75);
+}
+
+.floating-panel__header {
+	display: grid;
+	gap: 0.35rem;
+	margin-bottom: 1.25rem;
+}
+
+.floating-panel__title {
+	margin: 0;
+	font-size: 1rem;
+	font-weight: 600;
+}
+
+.floating-panel__subtitle {
+	margin: 0;
+	font-size: 0.85rem;
+	opacity: 0.75;
+}
+
+.quick-commands {
+	display: grid;
+	gap: 0.75rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.quick-commands__item {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.75rem 0.9rem;
+	border-radius: 18px;
+	backdrop-filter: blur(12px);
+}
+
+.floating-panel--light .quick-commands__item {
+	background: rgba(37, 99, 235, 0.08);
+}
+
+.floating-panel--dark .quick-commands__item {
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.quick-commands__key {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2.5rem;
+	height: 2.5rem;
+	border-radius: 9999px;
+	font-weight: 600;
+	font-size: 0.85rem;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	border: 1px solid transparent;
+	box-shadow: 0 12px 28px rgba(15, 23, 42, 0.15);
+}
+
+.floating-panel--light .quick-commands__key {
+	background: rgba(37, 99, 235, 0.16);
+	color: rgba(37, 99, 235, 0.95);
+}
+
+.floating-panel--dark .quick-commands__key {
+	background: rgba(37, 99, 235, 0.3);
+	color: #dbeafe;
+	border-color: rgba(148, 163, 184, 0.35);
+}
+
+.quick-commands__description {
+	font-size: 0.9rem;
+	line-height: 1.4;
+	opacity: 0.9;
+}
+
+.floating-panel__footer {
+	margin-top: 1.25rem;
+	font-size: 0.8rem;
+	opacity: 0.7;
+}
+
+.floating-panel--dark .floating-panel__footer {
+	color: rgba(226, 232, 240, 0.85);
+}
+
+.selected-points__counter {
+	margin: 0;
+	font-size: 0.85rem;
+	opacity: 0.75;
+}
+
+.selected-points__content {
+	display: grid;
+	gap: 0.85rem;
+}
+
+.selected-points__empty {
+	margin: 0;
+	font-size: 0.9rem;
+	opacity: 0.8;
+}
+
+.selected-points__list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	display: grid;
+	gap: 0.75rem;
+}
+
+.selected-points__list li {
+	width: 100%;
+}
+
+.intro-modal {
+	position: relative;
+	padding: 1px;
+	border-radius: 32px;
+	background: linear-gradient(135deg, rgba(37, 99, 235, 0.35), rgba(16, 185, 129, 0.4));
+	box-shadow: 0 32px 60px rgba(15, 23, 42, 0.25);
+}
+
+.intro-modal__inner {
+	position: relative;
+	border-radius: 30px;
+	padding: 2.75rem 2.5rem;
+	overflow: hidden;
+}
+
+.intro-modal--light .intro-modal__inner {
+	background: rgba(255, 255, 255, 0.98);
+	color: #0f172a;
+}
+
+.intro-modal--dark .intro-modal__inner {
+	background: rgba(11, 15, 25, 0.92);
+	color: #f8fafc;
+}
+
+.intro-modal__glow {
+	position: absolute;
+	border-radius: 9999px;
+	filter: blur(90px);
+	opacity: 0.6;
+}
+
+.intro-modal__glow--primary {
+	top: -120px;
+	right: -80px;
+	width: 260px;
+	height: 260px;
+	background: rgba(37, 99, 235, 0.8);
+}
+
+.intro-modal__glow--secondary {
+	bottom: -100px;
+	left: -60px;
+	width: 220px;
+	height: 220px;
+	background: rgba(16, 185, 129, 0.75);
+}
+
+.intro-header {
+	text-align: center;
+	display: grid;
+	gap: 0.75rem;
+	margin-bottom: 1.5rem;
+}
+
+.intro-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0 auto;
+	padding: 0.25rem 0.75rem;
+	border-radius: 9999px;
+	background: rgba(37, 99, 235, 0.16);
+	color: rgba(37, 99, 235, 0.95);
+	font-weight: 600;
+	font-size: 0.75rem;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.intro-modal--dark .intro-badge {
+	background: rgba(37, 99, 235, 0.3);
+	color: #dbeafe;
+}
+
+.intro-title {
+	font-size: 2rem;
+	line-height: 1.25;
+	font-weight: 700;
+}
+
+.intro-subtitle {
+	font-size: 1rem;
+	max-width: 36rem;
+	margin: 0 auto;
+	opacity: 0.85;
+}
+
+.intro-highlights {
+	display: grid;
+	gap: 1rem;
+	margin: 1.75rem 0;
+}
+
+.intro-highlight {
+	display: flex;
+	align-items: flex-start;
+	gap: 1rem;
+	padding: 1rem 1.25rem;
+	border-radius: 20px;
+	backdrop-filter: blur(12px);
+}
+
+.intro-modal--light .intro-highlight {
+	background: rgba(37, 99, 235, 0.08);
+}
+
+.intro-modal--dark .intro-highlight {
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.intro-highlight__icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 3rem;
+	height: 3rem;
+	border-radius: 9999px;
+	background: rgba(255, 255, 255, 0.15);
+	font-size: 1.5rem;
+}
+
+.intro-modal--light .intro-highlight__icon {
+	background: rgba(37, 99, 235, 0.12);
+}
+
+.intro-highlight__title {
+	font-size: 1rem;
+	font-weight: 600;
+	margin-bottom: 0.25rem;
+}
+
+.intro-highlight__description {
+	font-size: 0.9rem;
+	opacity: 0.85;
+	margin: 0;
+}
+
+.intro-footer {
+	display: grid;
+	gap: 1.5rem;
+	margin-top: 1.5rem;
+}
+
+.intro-note {
+	text-align: center;
+	font-size: 0.95rem;
+	opacity: 0.85;
+}
+
+.intro-actions {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.75rem;
+}
+
+@media (min-width: 768px) {
+	.intro-actions {
+		flex-direction: row;
+		justify-content: center;
+	}
+
+	.intro-highlight {
+		padding: 1.25rem 1.5rem;
+	}
 }
 </style>

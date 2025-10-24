@@ -38,6 +38,7 @@ const props = defineProps<{
 	isDarkMode?: boolean
 	resetToken?: number
 	enablePointEditing?: boolean
+	points?: GeoPoint[]
 }>()
 type PointMovedPayload = {
 	index: number
@@ -58,6 +59,28 @@ let routePolyline: L.Polyline | null = null
 let tileLayer: L.TileLayer | null = null
 let currentTileMode: 'light' | 'dark' | null = null
 const selectedPoints = ref<GeoPoint[]>([])
+
+const normalizePoint = (point: GeoPoint): GeoPoint => [
+	Number(point[0].toFixed(6)),
+	Number(point[1].toFixed(6)),
+]
+
+const arePointsEqual = (a: GeoPoint[], b: GeoPoint[]): boolean => {
+	if (a.length !== b.length) {
+		return false
+	}
+
+	return a.every((point, index) => {
+		const other = b[index]
+		return other && point[0] === other[0] && point[1] === other[1]
+	})
+}
+
+const getMaxPointsLimit = () => {
+	const rawLimit = props.maxPoints ?? 2
+	const parsedLimit = Number(rawLimit)
+	return Number.isFinite(parsedLimit) ? Math.max(2, Math.floor(parsedLimit)) : 2
+}
 
 const trimPointsToLimit = (points: GeoPoint[], limit: number): GeoPoint[] => {
 	if (limit <= 0 || points.length === 0) {
@@ -207,9 +230,7 @@ const refreshMarkers = () => {
 const handleMapClick = (event: LeafletMouseEvent) => {
 	const point: GeoPoint = [Number(event.latlng.lat.toFixed(6)), Number(event.latlng.lng.toFixed(6))]
 
-	const rawLimit = props.maxPoints ?? 2
-	const parsedLimit = Number(rawLimit)
-	const maxPoints = Number.isFinite(parsedLimit) ? Math.max(2, Math.floor(parsedLimit)) : 2
+	const maxPoints = getMaxPointsLimit()
 	const updated = selectedPoints.value.slice()
 
 	if (updated.length >= maxPoints) {
@@ -332,10 +353,8 @@ watch(
 
 watch(
 	() => props.maxPoints,
-	(value) => {
-		const rawLimit = value ?? 2
-		const parsedLimit = Number(rawLimit)
-		const limit = Number.isFinite(parsedLimit) ? Math.max(2, Math.floor(parsedLimit)) : 2
+	() => {
+		const limit = getMaxPointsLimit()
 
 		const trimmed = trimPointsToLimit(selectedPoints.value, limit)
 		if (trimmed.length !== selectedPoints.value.length) {
@@ -344,6 +363,30 @@ watch(
 			emit('update:points', trimmed)
 		}
 	},
+)
+
+const syncExternalPoints = (points: GeoPoint[] | undefined) => {
+	if (!points) {
+		return
+	}
+
+	const normalized = points.map((point) => normalizePoint(point))
+	const limited = trimPointsToLimit(normalized, getMaxPointsLimit())
+
+	if (arePointsEqual(limited, selectedPoints.value)) {
+		return
+	}
+
+	selectedPoints.value = limited
+	refreshMarkers()
+}
+
+watch(
+	() => props.points,
+	(points) => {
+		syncExternalPoints(points)
+	},
+	{ deep: true },
 )
 
 watch(
@@ -361,6 +404,12 @@ watch(
 		}
 	},
 )
+
+syncExternalPoints(props.points)
+
+defineExpose({
+	getContainer: () => mapEl.value,
+})
 </script>
 
 <template>
