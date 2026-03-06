@@ -26,25 +26,6 @@ O **Geo-Ops** é uma aplicação web voltada ao planejamento de rotas operaciona
 
 O projeto foi estruturado com **frontend em Vue 3 + Vite** e **backend em Spring Boot**, utilizando **Leaflet** para a experiência cartográfica e **OSRM** para a roteirização. A proposta visual foi pensada para um contexto operacional do agronegócio, com suporte a tema claro/escuro, customização de cores, edição de pontos e geração de imagem do mapa.
 
-<h2 align="center" id="sumario">Sumário</h2>
-
-- [Visão geral](#visao-geral)
-- [Funcionalidades](#funcionalidades)
-- [Fluxo principal de uso](#fluxo-principal-de-uso)
-- [Arquitetura do sistema](#arquitetura-do-sistema)
-- [Tecnologias utilizadas](#tecnologias-utilizadas)
-- [Estrutura do projeto](#estrutura-do-projeto)
-- [Instalação](#instalacao)
-- [Execução do projeto](#execucao-do-projeto)
-- [Configuração](#configuracao)
-- [API backend](#api-backend)
-- [Atalhos de teclado](#atalhos-de-teclado)
-- [Scripts disponíveis](#scripts-disponiveis)
-- [Testes e observações de desenvolvimento](#testes-e-observacoes-de-desenvolvimento)
-- [Galeria e espaço para imagens](#galeria-e-espaco-para-imagens)
-- [Aliare](#aliare)
-- [Autor](#autor)
-
 <h2 align="center" id="visao-geral">Visão geral</h2>
 
 O Geo-Ops foi desenhado para um fluxo simples:
@@ -117,19 +98,11 @@ O fluxo macro foi separado em três quadros para ficar mais legível: entrada do
   <img src="./docs/images/arquitetura-geo-ops-etapa-3.svg" width="" alt="Etapa 3 da arquitetura do Geo-Ops: retorno e atualização da interface" />
 </p>
 
-Fontes editáveis em Mermaid:
-
-- `docs/diagrams/arquitetura-geo-ops-etapa-1.mmd`
-- `docs/diagrams/arquitetura-geo-ops-etapa-2.mmd`
-- `docs/diagrams/arquitetura-geo-ops-etapa-3.mmd`
-
 <h3 align="center" id="fluxo-real-de-execucao-de-uma-rota">Fluxo real de execução de uma rota</h3>
 
 <p align="center">
   <img src="./docs/images/fluxo-rota-geo-ops.svg" width="" alt="Diagrama de sequência do fluxo de cálculo de rota no Geo-Ops" />
 </p>
-
-Fonte editável em Mermaid: `docs/diagrams/fluxo-rota-geo-ops.mmd`
 
 <h3 align="center" id="regra-de-decisao-do-frontend">Regra de decisão do frontend</h3>
 
@@ -138,8 +111,6 @@ Este é o ponto principal para entender o comportamento automático do sistema: 
 <p align="center">
   <img src="./docs/images/decisao-frontend-geo-ops.svg" width="" alt="Diagrama de decisão do frontend do Geo-Ops" />
 </p>
-
-Fonte editável em Mermaid: `docs/diagrams/decisao-frontend-geo-ops.mmd`
 
 <h3 align="center" id="responsabilidade-de-cada-parte">Responsabilidade de cada parte</h3>
 
