@@ -5,11 +5,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR"
 LOG_DIR="$ROOT_DIR/logs"
 mkdir -p "$LOG_DIR"
+exec 3>&1
+
+shopt -s nullglob
+old_logs=(
+	"$LOG_DIR"/geo_ops_*.log
+	"$LOG_DIR"/backend_*.log
+	"$LOG_DIR"/frontend_*.log
+)
+shopt -u nullglob
+if ((${#old_logs[@]} > 0)); then
+	printf "Limpando logs anteriores em %s\n" "$LOG_DIR" >&3
+	rm -f "${old_logs[@]}"
+fi
+
 TIMESTAMP="$(date +"%Y%m%d_%H%M%S")"
 LOG_FILE="$LOG_DIR/geo_ops_${TIMESTAMP}.log"
+: >"$LOG_FILE"
 
-touch "$LOG_FILE"
-exec 3>&1
+FRONTEND_NODE_MODULES_DIR="$ROOT_DIR/frontend/node_modules"
+FRONTEND_DEPS_STAMP="$FRONTEND_NODE_MODULES_DIR/.geo_ops_dependencies_ready"
+BACKEND_TARGET_DIR="$ROOT_DIR/backend/target"
+BACKEND_DEPS_STAMP="$BACKEND_TARGET_DIR/.geo_ops_dependencies_ready"
+MAVEN_REPO_DIR="${HOME}/.m2/repository"
 
 printf "Iniciando orquestrador Geo-Ops em %s\n" "$(date +"%Y-%m-%d %H:%M:%S")" >>"$LOG_FILE"
 
@@ -573,6 +591,64 @@ install_frontend_deps() {
 	)
 }
 
+mark_dependency_cache_ready() {
+	local stamp="$1"
+	mkdir -p "$(dirname "$stamp")"
+	: >"$stamp"
+}
+
+is_dependency_cache_current() {
+	local stamp="$1"
+	shift
+	[[ -f "$stamp" ]] || return 1
+	local reference
+	for reference in "$@"; do
+		if [[ -e "$reference" && "$reference" -nt "$stamp" ]]; then
+			return 1
+		fi
+	done
+	return 0
+}
+
+frontend_dependencies_ready() {
+	[[ -d "$FRONTEND_NODE_MODULES_DIR" ]] || return 1
+	is_dependency_cache_current \
+		"$FRONTEND_DEPS_STAMP" \
+		"$ROOT_DIR/frontend/package.json" \
+		"$ROOT_DIR/frontend/package-lock.json"
+}
+
+backend_dependencies_ready() {
+	[[ -d "$BACKEND_TARGET_DIR" ]] || return 1
+	[[ -d "$MAVEN_REPO_DIR" ]] || return 1
+	is_dependency_cache_current \
+		"$BACKEND_DEPS_STAMP" \
+		"$ROOT_DIR/backend/pom.xml" \
+		"$ROOT_DIR/backend/.mvn/wrapper/maven-wrapper.properties"
+}
+
+prepare_backend() {
+	if backend_dependencies_ready; then
+		info "Dependencias do backend ja estao prontas. Pulando nova preparacao."
+		log_line "Backend: usando cache local de dependencias e build."
+		return 0
+	fi
+
+	run_with_spinner "Preparando backend (Maven)" install_backend_deps
+	mark_dependency_cache_ready "$BACKEND_DEPS_STAMP"
+}
+
+prepare_frontend() {
+	if frontend_dependencies_ready; then
+		info "Dependencias do frontend ja estao prontas. Pulando npm install."
+		log_line "Frontend: usando node_modules ja preparado."
+		return 0
+	fi
+
+	run_with_spinner "Preparando frontend (npm install)" install_frontend_deps
+	mark_dependency_cache_ready "$FRONTEND_DEPS_STAMP"
+}
+
 start_backend_process() {
 	backend_run_log="$LOG_DIR/backend_${TIMESTAMP}.log"
 	: >"$backend_run_log"
@@ -703,10 +779,10 @@ main() {
 	preflight_checks
 	progress_update "Ambiente validado"
 
-	run_with_spinner "Instalando dependencias do backend" install_backend_deps
+	prepare_backend
 	progress_update "Backend compilado"
 
-	run_with_spinner "Instalando dependencias do frontend" install_frontend_deps
+	prepare_frontend
 	progress_update "Frontend preparado"
 
 	start_backend_process
