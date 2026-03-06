@@ -25,16 +25,18 @@ const formatCoordinate = (value: number) => value.toFixed(6)
 </script>
 
 <template>
-	<n-timeline>
+	<n-timeline class="route-timeline">
 		<n-timeline-item
 			v-for="item in props.items"
 			:key="item.key"
 			:title="item.label"
 			:type="roleTypes[item.role]">
 			<template #default>
-				<div class="flex flex-col gap-1">
-					<span :class="item.badgeClasses">{{ roleLabels[item.role] }}</span>
-					<span class="text-xs text-tertiary">
+				<div class="route-timeline__body">
+					<span :class="['route-timeline__badge', item.badgeClasses]">
+						{{ roleLabels[item.role] }}
+					</span>
+					<span class="route-timeline__coords">
 						{{ formatCoordinate(item.coordinate.lat) }},
 						{{ formatCoordinate(item.coordinate.lon) }}
 					</span>
@@ -43,3 +45,42 @@ const formatCoordinate = (value: number) => value.toFixed(6)
 		</n-timeline-item>
 	</n-timeline>
 </template>
+
+<style scoped>
+.route-timeline {
+	width: 100%;
+}
+
+.route-timeline__body {
+	display: grid;
+	gap: 0.4rem;
+	width: 100%;
+}
+
+.route-timeline__badge {
+	display: flex;
+	width: 100%;
+	justify-content: flex-start;
+}
+
+.route-timeline__coords {
+	font-size: 0.75rem;
+	color: var(--color-text-tertiary);
+}
+
+:deep(.route-timeline .n-timeline-item) {
+	width: 100%;
+}
+
+:deep(.route-timeline .n-timeline-item-content) {
+	width: calc(100% - (var(--n-icon-size) + 12px));
+}
+
+:deep(.route-timeline .n-timeline-item-content__content) {
+	width: 100%;
+}
+
+:deep(.route-timeline .n-timeline-item-content__title) {
+	margin-bottom: 0.65rem;
+}
+</style>

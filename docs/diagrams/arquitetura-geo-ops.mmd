@@ -1,0 +1,66 @@
+flowchart LR
+    U([Usuario])
+    ACTION[Seleciona pontos<br/>ou arrasta marcadores]
+    MAP[MapView.vue<br/>captura eventos e desenha o mapa]
+    APP[[App.vue<br/>coordena estado, atalhos,<br/>validacoes e recalculo]]
+    RULES{{Pontos suficientes<br/>para calcular a rota?}}
+    CLEAN[Limpa rota atual<br/>e aguarda novos pontos]
+    API[/services/api.ts<br/>POST \/api\/routes/]
+    DRAW[Mapa atualizado<br/>polyline e marcadores]
+    PANEL[Timeline, alerts,<br/>drawers e modais]
+    THEME[(Pinia<br/>tema claro/escuro)]
+    SNAPSHOT[/html-to-image<br/>exportacao PNG/]
+    TILE[(OpenStreetMap<br/>e CARTO)]
+
+    subgraph FE[Frontend - Vue 3 + Vite]
+        ACTION --> MAP --> APP --> RULES
+        THEME --> APP
+        SNAPSHOT --> APP
+    end
+
+    subgraph BE[Backend - Spring Boot]
+        CTRL[RouteController<br/>porta de entrada REST]
+        SERVICE[RouteService<br/>validacao e orquestracao]
+        OSRM_SERVICE[OsrmRoutingService<br/>integracao com roteirizacao]
+
+        CTRL --> SERVICE --> OSRM_SERVICE
+    end
+
+    subgraph EXT[Servicos externos]
+        NEAREST([OSRM nearest<br/>aproxima pontos para vias])
+        ROUTE[(OSRM route<br/>gera a geometria final)]
+    end
+
+    U --> ACTION
+    MAP --- TILE
+    RULES -- Nao --> CLEAN
+    RULES -- Sim --> API --> CTRL
+    OSRM_SERVICE --> NEAREST
+    NEAREST -. ancora ajustada .-> OSRM_SERVICE
+    OSRM_SERVICE --> ROUTE
+    ROUTE --> RESULT[RouteResponse<br/>nodes + coordinates + totalCost]
+    RESULT --> APP
+    APP --> DRAW
+    APP --> PANEL
+
+    classDef actor fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px;
+    classDef frontend fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1.5px;
+    classDef appcore fill:#bfdbfe,stroke:#1d4ed8,color:#0f172a,stroke-width:2px;
+    classDef decision fill:#fee2e2,stroke:#dc2626,color:#7f1d1d,stroke-width:2px;
+    classDef backend fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1.5px;
+    classDef external fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:1.5px;
+    classDef output fill:#ede9fe,stroke:#7c3aed,color:#4c1d95,stroke-width:1.5px;
+    classDef passive fill:#f8fafc,stroke:#94a3b8,color:#0f172a,stroke-width:1.2px;
+
+    class U actor;
+    class ACTION,MAP,API frontend;
+    class APP appcore;
+    class RULES decision;
+    class CTRL,SERVICE,OSRM_SERVICE backend;
+    class NEAREST,ROUTE,TILE external;
+    class DRAW,PANEL,RESULT output;
+    class CLEAN,THEME,SNAPSHOT passive;
+
+    style FE fill:#f8fafc,stroke:#cbd5e1,stroke-width:1px,color:#0f172a
+    style BE fill:#f0fdf4,stroke:#bbf7d0,stroke-width:1px,color:#14532d
+    style EXT fill:#fffbeb,stroke:#fde68a,stroke-width:1px,color:#78350f

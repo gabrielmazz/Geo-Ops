@@ -19,13 +19,20 @@ const emit = defineEmits<{
 }>()
 </script>
 
-<template>
-	<n-alert
-		:title="props.title"
-		:type="props.type"
-		:show-icon="props.showIcon"
+	<template>
+		<n-alert
+			class="app-alert"
+			:title="props.title"
+			:type="props.type"
+			:show-icon="props.showIcon"
 		:closable="props.closable"
 		@close="emit('close')">
-		{{ props.message }}
-	</n-alert>
-</template>
+			{{ props.message }}
+		</n-alert>
+	</template>
+
+<style scoped>
+:deep(.app-alert.n-alert) {
+	border-radius: 8px !important;
+}
+</style>

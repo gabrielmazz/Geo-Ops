@@ -1,0 +1,32 @@
+flowchart LR
+    U([Usuario])
+    ACTION[Seleciona pontos<br/>ou arrasta marcadores]
+    MAP[MapView.vue<br/>captura eventos do mapa]
+    APP[[App.vue<br/>coordena o estado da tela]]
+    CHECK{Quantidade de pontos<br/>atingiu o limite?}
+    WAIT[Aguarda mais pontos<br/>ou reinicia a selecao]
+    API[/services/api.ts<br/>prepara o POST para o backend/]
+    THEME[(Pinia<br/>tema claro e escuro)]
+    SNAPSHOT[/html-to-image<br/>gera PNG do mapa/]
+    TILE[(OpenStreetMap<br/>e CARTO)]
+
+    U --> ACTION --> MAP --> APP --> CHECK
+    MAP --- TILE
+    THEME --> APP
+    SNAPSHOT --> APP
+    CHECK -- Nao --> WAIT
+    CHECK -- Sim --> API
+
+    classDef actor fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px;
+    classDef frontend fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1.5px;
+    classDef appcore fill:#bfdbfe,stroke:#1d4ed8,color:#0f172a,stroke-width:2px;
+    classDef decision fill:#fee2e2,stroke:#dc2626,color:#7f1d1d,stroke-width:2px;
+    classDef passive fill:#f8fafc,stroke:#94a3b8,color:#0f172a,stroke-width:1.2px;
+    classDef external fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:1.5px;
+
+    class U actor;
+    class ACTION,MAP,API frontend;
+    class APP appcore;
+    class CHECK decision;
+    class WAIT,THEME,SNAPSHOT passive;
+    class TILE external;

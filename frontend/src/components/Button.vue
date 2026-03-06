@@ -13,12 +13,19 @@ const emit = defineEmits<{
 }>()
 </script>
 
-<template>
-	<n-button
-		@click="emit('click')"
-		:text="props.buttonType === 'text'"
-		:ghost="props.buttonType === 'ghost'"
-		:color="props.color">
-		<slot>{{ props.label }}</slot>
-	</n-button>
-</template>
+	<template>
+		<n-button
+			class="app-button"
+			@click="emit('click')"
+			:text="props.buttonType === 'text'"
+			:ghost="props.buttonType === 'ghost'"
+			:color="props.color">
+			<slot>{{ props.label }}</slot>
+		</n-button>
+	</template>
+
+<style scoped>
+:deep(.app-button.n-button) {
+	border-radius: 8px !important;
+}
+</style>

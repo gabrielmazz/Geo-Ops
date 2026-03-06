@@ -67,6 +67,12 @@ const maxSelectablePoints = ref<number | null>(2)
 const mapResetToken = ref(0)
 const mapViewRef = ref<MapViewExposed | null>(null)
 const introModalThemeClass = computed(() => (isDark.value ? 'intro-modal--dark' : 'intro-modal--light'))
+const signatureModalThemeClass = computed(() =>
+	isDark.value ? 'signature-modal--dark' : 'signature-modal--light',
+)
+const drawerPanelThemeClass = computed(() =>
+	isDark.value ? 'drawer-panel--dark' : 'drawer-panel--light',
+)
 const floatingPanelThemeClass = computed(() =>
 	isDark.value ? 'floating-panel--dark' : 'floating-panel--light',
 )
@@ -252,29 +258,43 @@ const generateRandomPoints = (count: number): GeoPoint[] => {
 const MAX_RANDOM_ROUTE_ATTEMPTS = 12
 
 type IntroHighlight = {
-	icon: string
 	title: string
 	description: string
 }
 
 const introHighlights: IntroHighlight[] = [
 	{
-		icon: '📍',
 		title: 'Marque pontos estratégicos',
 		description:
 			'Selecione fazendas, centros de distribuição e destinos diretamente no mapa interativo.',
 	},
 	{
-		icon: '🧭',
 		title: 'Rotas otimizadas automaticamente',
 		description:
 			'Combine a roteirização inteligente com ajustes automáticos para encontrar o melhor trajeto.',
 	},
 	{
-		icon: '🎨',
 		title: 'Personalize do seu jeito',
 		description:
 			'Ajuste cores, edição de pontos e preferências de aproximação para alinhar o Geo-Ops à sua operação.',
+	},
+]
+
+const signatureHighlights: IntroHighlight[] = [
+	{
+		title: 'Programa PDI',
+		description:
+			'Resultado direto do Programa de Desenvolvimento Individual, consolidando aprendizado tecnico com pratica aplicada.',
+	},
+	{
+		title: 'Aliare',
+		description:
+			'Empresa de tecnologia focada em solucoes para o agronegocio brasileiro, contexto em que o projeto foi concebido.',
+	},
+	{
+		title: 'Geo-Ops',
+		description:
+			'Projeto voltado ao planejamento de rotas e visualizacao operacional com mapa interativo e ajustes em tempo real.',
 	},
 ]
 
@@ -474,6 +494,9 @@ const isActionsDrawerOpen = ref(false)
 
 // Estado do drawer de personalizações -> Drawer para ver as personalizações do mapa
 const isCustomizationsDrawerOpen = ref(false)
+
+// Estado do painel flutuante de atalhos do mapa
+const isQuickCommandsMinimized = ref(false)
 
 // Estado do modal que mostra o meu nome e a animação
 const isModalOpenName = ref(false)
@@ -1088,10 +1111,9 @@ evaluateRouteComputation()
 	<n-config-provider :theme="isDark ? darkTheme : null" :theme-overrides="themeOverrides">
 		<div class="min-h-screen flex app-shell">
 
-			<main class="flex-1 flex flex-col p-8">
-				<div
-					class="flex-1 w-full rounded-3xl surface-card backdrop-blur px-10 pt-12 pb-6 space-y-6 flex flex-col">
-					
+				<main class="flex-1 flex flex-col p-8">
+					<div
+						class="flex-1 w-full rounded-lg surface-card backdrop-blur px-10 pt-12 pb-6 space-y-6 flex flex-col">
 					<div class="relative flex-1 min-h-[60vh]">
 						<MapView
 							ref="mapViewRef"
@@ -1141,196 +1163,314 @@ evaluateRouteComputation()
 
 						<!-- Div do lado direito na parte de baixo para mostrar alguns comandos e atalhos que podem ser utilizados -->
 						<div class="pointer-events-none absolute right-6 bottom-6 z-[1000] max-w-xs">
-							<div class="floating-panel pointer-events-auto" :class="floatingPanelThemeClass">
+							<div
+								class="floating-panel quick-commands-panel pointer-events-auto"
+								:class="[
+									floatingPanelThemeClass,
+									{ 'quick-commands-panel--minimized': isQuickCommandsMinimized },
+								]">
 								<span class="floating-panel__glow floating-panel__glow--primary" aria-hidden="true"></span>
 								<span class="floating-panel__glow floating-panel__glow--secondary" aria-hidden="true"></span>
 
 								<div class="floating-panel__inner">
-									<header class="floating-panel__header">
-										<h2 class="floating-panel__title">Instruções e comandos rápidos</h2>
-										<p class="floating-panel__subtitle">
+									<header class="floating-panel__header floating-panel__header--actions">
+										<h2 class="floating-panel__title">
+											{{ isQuickCommandsMinimized ? 'Atalhos' : 'Instruções e comandos rápidos' }}
+										</h2>
+										<button
+											type="button"
+											class="floating-panel__toggle"
+											:aria-expanded="(!isQuickCommandsMinimized).toString()"
+											:aria-label="
+												isQuickCommandsMinimized
+													? 'Expandir painel de comandos rápidos'
+													: 'Minimizar painel de comandos rápidos'
+											"
+											@click="isQuickCommandsMinimized = !isQuickCommandsMinimized">
+											{{ isQuickCommandsMinimized ? 'Expandir' : 'Minimizar' }}
+										</button>
+										<p
+											v-if="!isQuickCommandsMinimized"
+											class="floating-panel__subtitle floating-panel__subtitle--full">
 											Use os atalhos para ajustar rotas e pontos sem interromper o fluxo.
 										</p>
 									</header>
 
-									<ul class="quick-commands">
-										<li v-for="command in quickCommands" :key="command.keyLabel" class="quick-commands__item">
-											<span class="quick-commands__key">{{ command.keyLabel }}</span>
-											<span class="quick-commands__description">{{ command.description }}</span>
-										</li>
-									</ul>
+									<template v-if="!isQuickCommandsMinimized">
+										<ul class="quick-commands">
+											<li v-for="command in quickCommands" :key="command.keyLabel" class="quick-commands__item">
+												<span class="quick-commands__key">{{ command.keyLabel }}</span>
+												<span class="quick-commands__description">{{ command.description }}</span>
+											</li>
+										</ul>
 
-									<p class="floating-panel__footer">
-										Combine os atalhos para configurar rotas em segundos.
-									</p>
+										<p class="floating-panel__footer">
+											Combine os atalhos para configurar rotas em segundos.
+										</p>
+									</template>
 								</div>
 							</div>
 						</div>
 					</div>
 
-						<!-- Div responsavel pelos botões e ações que serão possiveis executar no sistema -->
-						<n-flex justify="center" align="center" class="w-full gap-4 pt-2 pb-0">
-							<!-- Botão responsável por abrir o drawer dos pontos, mostrando uma timeline -->
-							<Button
-								@click="isActionsDrawerOpen = true"
-								:label="'Abrir timeline'"
-								button-type="ghost"
-								class="metamorphous-regular"
-								color="#10b981"
-							/>
+					<!-- Div responsavel pelos botões e ações que serão possiveis executar no sistema -->
+					<n-flex justify="center" align="center" class="w-full gap-4 pt-2 pb-0">
+						<!-- Botão responsável por abrir o drawer dos pontos, mostrando uma timeline -->
+						<Button
+							@click="isActionsDrawerOpen = true"
+							:label="'Abrir timeline'"
+							button-type="ghost"
+							color="#2563ebf2"
+						/>
 
-							<!-- Botão responsável por abrir o drawer de personalizações -->
-							<Button
-								@click="isCustomizationsDrawerOpen = true"
-								:label="'Abrir personalizações'"
-								button-type="ghost"
-								class="metamorphous-regular"
-								color="#10b981"
-							/>
-						</n-flex>
+						<!-- Botão responsável por abrir o drawer de personalizações -->
+						<Button
+							@click="isCustomizationsDrawerOpen = true"
+							:label="'Abrir personalizações'"
+							button-type="ghost"
+							color="#2563ebf2"
+						/>
+					</n-flex>
 				</div>
 			</main>
 		</div>
 
-		<n-flex justify="center">
-			<Button @click="isModalOpenName = true" 
-					:label="'Desenvolvido por Gabriel Mazzuco'" 
-					:button-type="'text'" 
-					class="fixed bottom-6 left-6 z-[1200]" />
-		</n-flex>
+			<n-flex justify="center" class="pointer-events-none fixed right-0 bottom-2 left-0 z-[1200] px-6">
+				<Button @click="isModalOpenName = true" 
+						:label="'Desenvolvido por Gabriel Mazzuco'" 
+						:button-type="'text'" 
+						class="pointer-events-auto text-center" />
+			</n-flex>
 
 
-		<!-- Drawer que mostrara todos os pontos selecionados -->
-		<!-- A ideia é que ele usa o componente do Native para montar uma timeline
-		  	com os pontos selecionados, marcando o ponto de origem, destino e os pontos
-		  	intermediários -->
-		<Drawer title="Ações disponíveis" v-model:show="isActionsDrawerOpen">
-			<section class="space-y-3">
-				<h2 class="text-lg font-medium text-primary">Timeline da rota</h2>
+	<!-- Drawer que mostrara todos os pontos selecionados -->
+	<!-- A ideia é que ele usa o componente do Native para montar uma timeline
+	  	com os pontos selecionados, marcando o ponto de origem, destino e os pontos
+	  	intermediários -->
+	<Drawer title="Ações disponíveis" v-model:show="isActionsDrawerOpen" :width="680">
+		<div class="drawer-panel drawer-panel--actions" :class="drawerPanelThemeClass">
+			<span class="drawer-panel__glow drawer-panel__glow--primary" aria-hidden="true"></span>
+			<span class="drawer-panel__glow drawer-panel__glow--secondary" aria-hidden="true"></span>
 
-				<div v-if="routeLoading" class="text-secondary">Calculando rota...</div>
-
-				<Alert v-else-if="routeError" title="Erro ao calcular a rota" type="error" :show-icon="true"
-					:closable="true" :message="routeError || 'Ocorreu um erro desconhecido ao calcular a rota.'"
-					@close="dismissRouteError" />
-
-				<RouteTimeline v-else-if="routeTimelineItems.length" :items="routeTimelineItems" />
-
-				<div v-else class="text-secondary">
-					Selecione todos os pontos configurados para visualizar a rota.
+			<div class="drawer-panel__inner">
+				<div class="intro-header drawer-header">
+					<h2 class="intro-title">Timeline da rota</h2>
+					<p class="intro-subtitle">
+						Acompanhe as etapas da rota e ajuste rapidamente quando necessário.
+					</p>
 				</div>
-			</section>
 
-		</Drawer>
+				<n-divider dashed />
 
-		<!-- Drawer que mostrara as personalizações do mapa -->
-		<Drawer title="Personalizações do mapa" v-model:show="isCustomizationsDrawerOpen">
-			<section class="space-y-3">
+				<div class="drawer-panel__content">
+					<div v-if="routeLoading" class="drawer-panel__state drawer-panel__state--loading">
+						<p class="drawer-panel__state-text">Calculando rota em tempo real...</p>
+					</div>
 
-				<n-h2 class="text-primary">Configurações gerais</n-h2>
+					<Alert
+						v-else-if="routeError"
+						title="Erro ao calcular a rota"
+						type="error"
+						:show-icon="true"
+						:closable="true"
+						:message="routeError || 'Ocorreu um erro desconhecido ao calcular a rota.'"
+						class="drawer-panel__alert"
+						@close="dismissRouteError"
+					/>
 
-				<n-grid
-					x-gap="24" :cols="2"
-				>
-					<n-gi>
+					<div v-else-if="routeTimelineItems.length" class="drawer-panel__timeline">
+						<RouteTimeline :items="routeTimelineItems" />
+					</div>
 
-						<Switch v-model="isDark" label="Dark Mode"
-							description="Ative para mudar o tema do mapa e da aplicação para o modo escuro." />
+					<p v-else class="drawer-panel__empty">
+						Selecione todos os pontos configurados para visualizar a rota e acompanhar sua evolução.
+					</p>
+				</div>
 
-					</n-gi>
+				<n-divider dashed />
 
-					<n-gi>
+				<footer class="drawer-panel__footer">
+					<p class="intro-note drawer-panel__note">
+						Dica: utilize o atalho <strong>R</strong> para redefinir rapidamente os pontos da rota.
+					</p>
+				</footer>
+			</div>
+		</div>
+	</Drawer>
 
-						<Switch v-model="routeLoading" label="Modo de carregamento"
-							description="Ative para simular o estado de carregamento da rota." />
+	<!-- Drawer que mostrara as personalizações do mapa -->
+	<Drawer title="Personalizações do mapa" v-model:show="isCustomizationsDrawerOpen">
+		<div class="drawer-panel drawer-panel--customizations" :class="drawerPanelThemeClass">
+			<span class="drawer-panel__glow drawer-panel__glow--primary" aria-hidden="true"></span>
+			<span class="drawer-panel__glow drawer-panel__glow--secondary" aria-hidden="true"></span>
 
-					</n-gi>
+			<div class="drawer-panel__inner">
+				<div class="intro-header drawer-header">
+					<h2 class="intro-title">Personalizações do mapa</h2>
+					<p class="intro-subtitle">
+						Ajuste tema, comportamentos e cores para alinhar o painel às suas operações.
+					</p>
+				</div>
 
-				</n-grid>
+				<n-divider dashed />
 
-				<n-grid
-					x-gap="24" :cols="2"
-				>
-					<n-gi>
+				<div class="drawer-sections">
+					<section class="drawer-section">
+						<h3 class="drawer-section__title">Configurações gerais</h3>
+						<p class="drawer-section__description">
+							Defina preferências de tema e comportamento do mapa.
+						</p>
 
-						<Switch v-model="isPointEditingEnabled" label="Edição dos pontos"
-							description="Permite arrastar os marcadores no mapa para ajustar suas posições." />
-						
+						<div class="drawer-option-grid">
+							<div class="drawer-option">
+								<Switch
+									v-model="isDark"
+									label="Dark Mode"
+									description="Ative para mudar o tema do mapa e da aplicação para o modo escuro."
+								/>
+							</div>
 
-					</n-gi>
+							<div class="drawer-option">
+								<Switch
+									v-model="routeLoading"
+									label="Modo de carregamento"
+									description="Simule o estado de carregamento da rota para validar feedbacks visuais."
+								/>
+							</div>
 
-					<n-gi>
+							<div class="drawer-option">
+								<Switch
+									v-model="isPointEditingEnabled"
+									label="Edição dos pontos"
+									description="Permite arrastar os marcadores no mapa para ajustar suas posições."
+								/>
+							</div>
 
-						<Switch v-model="isRouteApproximationEnabled" label="Aproximação das rotas"
-							description="Ajusta automaticamente os pontos para vias próximas ao calcular a rota." />
+							<div class="drawer-option">
+								<Switch
+									v-model="isRouteApproximationEnabled"
+									label="Aproximação das rotas"
+									description="Ajusta automaticamente os pontos para vias próximas ao calcular a rota."
+								/>
+							</div>
+						</div>
+					</section>
 
-					</n-gi>
+					<section class="drawer-section">
+						<h3 class="drawer-section__title">Cores da rota</h3>
+						<p class="drawer-section__description">
+							Dê identidade às rotas para diferenciá-las visualmente.
+						</p>
 
-				</n-grid>
+						<ColorPicker
+							v-model="routeColor"
+							label="Cor da rota"
+							:expected-color="DEFAULT_ROUTE_COLOR"
+							@invalid="(msg) =>
+								pushAlert({
+									title: 'Cor inválida',
+									type: 'warning',
+									message: msg,
+								})
+							"
+						/>
+					</section>
 
+					<section class="drawer-section">
+						<h3 class="drawer-section__title">Cores dos pontos</h3>
+						<p class="drawer-section__description">
+							Altere a cor dos pontos (origem, destino e intermediários) exibidos no mapa.
+						</p>
 
+						<ColorPicker
+							v-model="pointColor"
+							label="Cor dos pontos"
+							:expected-color="DEFAULT_POINT_COLOR"
+							@invalid="(msg) =>
+								pushAlert({
+									title: 'Cor inválida',
+									type: 'warning',
+									message: msg,
+								})
+							"
+						/>
+					</section>
 
-				<n-h2 class="text-primary">Personalização da cor da rota</n-h2>
+					<section class="drawer-section">
+						<h3 class="drawer-section__title">Limite de pontos</h3>
+						<p class="drawer-section__description">
+							Controle quantos pontos podem ser selecionados na definição da rota.
+						</p>
 
-				<ColorPicker v-model="routeColor" label="Cor da rota" :expected-color="DEFAULT_ROUTE_COLOR" @invalid="(msg) =>
-					pushAlert({
-						title: 'Cor inválida',
-						type: 'warning',
-						message: msg,
-					})
-				" />
-
-				<n-h2 class="text-primary">Personalização do pontos da rota</n-h2>
-
-				<n-p class="text-secondary">
-					Altere a cor dos pontos (origem, destino e intermediários) que aparecem no mapa. A cor padrão é #22C55E.
-				</n-p>
-
-				<ColorPicker v-model="pointColor" label="Cor dos pontos" :expected-color="DEFAULT_POINT_COLOR" @invalid="(msg) =>
-					pushAlert({
-						title: 'Cor inválida',
-						type: 'warning',
-						message: msg,
-					})
-				" />
-
-				 <!-- Input responsavel por limitar quantidade de pontos que o usuario pode clicar no mapa para definir
-				  	  uma rota entre eles --> 
-				<NumberInput v-model="maxSelectablePoints" label="Quantidade máxima de pontos"
-					description="Defina a quantidade máxima de pontos que podem ser selecionados no mapa para traçar uma rota entre eles."
-					:min="2" :max="6" 
-					@change="handleMaxPointsChange"
-				/>
-
-			</section>
-		</Drawer>
+						<NumberInput
+							v-model="maxSelectablePoints"
+							label="Quantidade máxima de pontos"
+							description="Defina a quantidade máxima de pontos que podem ser selecionados no mapa."
+							:min="2"
+							:max="6"
+							@change="handleMaxPointsChange"
+						/>
+					</section>
+				</div>
+			</div>
+		</div>
+	</Drawer>
 
 		<!-- Modal responsável por mostrar o meu nome e da animação -->
 		<Modal
 			:show="isModalOpenName"
+			:width="760"
 			@update:show="isModalOpenName = $event"
 		>
+			<div class="signature-modal" :class="signatureModalThemeClass">
+				<span class="signature-modal__glow signature-modal__glow--primary" aria-hidden="true"></span>
+				<span class="signature-modal__glow signature-modal__glow--secondary" aria-hidden="true"></span>
 
-			<n-h2 class="text-primary text-center mb-4">Desenvolvido por Gabriel Mazzuco</n-h2>
-			
-			<ViewLoader />
+				<div class="signature-modal__inner">
+					<div class="intro-header">
+						<span class="intro-badge">Geo-Ops · PDI</span>
+						<h2 class="intro-title">Desenvolvido por Gabriel Mazzuco</h2>
+						<p class="intro-subtitle">
+							Projeto idealizado durante o Programa de Desenvolvimento Individual (PDI) na Aliare,
+							com foco em roteirizacao e visualizacao operacional.
+						</p>
+					</div>
 
-			<div class="space-y-4 mt-12">	
-				<n-p class="text-secondary text-center">
-					Este foi um projeto para o PDI - Programa de Desenvolvimento Individual do meu trabalho como desenvolvedor na Empresa de Tecnologia voltada para o Agronegócio (Aliare).
-				</n-p>
+					<n-divider dashed />
+
+					<div class="intro-highlights signature-highlights">
+						<article
+							v-for="highlight in signatureHighlights"
+							:key="highlight.title"
+							class="intro-highlight">
+							<div class="intro-highlight__content">
+								<h3 class="intro-highlight__title">{{ highlight.title }}</h3>
+								<p class="intro-highlight__description">
+									{{ highlight.description }}
+								</p>
+							</div>
+						</article>
+					</div>
+
+					<n-divider dashed />
+
+					<div class="intro-footer signature-footer">
+						<p class="intro-note signature-note">
+							Este projeto foi desenvolvido como parte do PDI, conectando aprendizado tecnico,
+							contexto de negocio e uma proposta visual aplicada ao planejamento operacional.
+						</p>
+
+						<n-flex justify="center" align="center" class="signature-brand">
+							<n-image
+								:src="LogoAliare"
+								alt="Logo da Aliare"
+								width="auto"
+								height="auto"
+							/>
+						</n-flex>
+					</div>
+				</div>
 			</div>
-
-
-			<n-flex justify="center" align="center" class="w-full h-full">
-				<n-image
-					:src="LogoAliare"
-					alt="Logo da Aliare"
-					width="250"
-					height="auto"
-				/>
-			</n-flex>
-
 		</Modal>
 
 		<!-- Modal que sempre aparece quando carrega a tela pela primeira vez, introduzindo o sistema -->
@@ -1353,14 +1493,11 @@ evaluateRouteComputation()
 
 					<n-divider dashed />
 
-					<div class="intro-highlights">
-						<article v-for="highlight in introHighlights" :key="highlight.title" class="intro-highlight">
-							<div class="intro-highlight__icon" aria-hidden="true">
-								{{ highlight.icon }}
-							</div>
-							<div class="intro-highlight__content">
-								<h3 class="intro-highlight__title">
-									{{ highlight.title }}
+						<div class="intro-highlights">
+							<article v-for="highlight in introHighlights" :key="highlight.title" class="intro-highlight">
+								<div class="intro-highlight__content">
+									<h3 class="intro-highlight__title">
+										{{ highlight.title }}
 								</h3>
 								<p class="intro-highlight__description">
 									{{ highlight.description }}
@@ -1385,7 +1522,7 @@ evaluateRouteComputation()
 								@click="openPersonalizationsFromIntro"
 								:label="'Personalizar interface'"
 								button-type="ghost"
-								color="#22c55e"
+								color="#2563ebf2"
 							/>
 						</div>
 					</div>
@@ -1403,340 +1540,4 @@ evaluateRouteComputation()
 </template>
 
 <!-- Retira a barra de rolagem -->
-<style scoped>
-:global(html),
-:global(body) {
-	overflow: hidden;
-}
-
-.floating-panel {
-	position: relative;
-	padding: 1px;
-	border-radius: 28px;
-	background: linear-gradient(135deg, rgba(37, 99, 235, 0.35), rgba(16, 185, 129, 0.4));
-	box-shadow: 0 24px 48px rgba(15, 23, 42, 0.22);
-	overflow: hidden;
-}
-
-.floating-panel__inner {
-	position: relative;
-	border-radius: 27px;
-	padding: 1.5rem;
-	backdrop-filter: blur(18px);
-}
-
-.floating-panel--light .floating-panel__inner {
-	background: rgba(255, 255, 255, 0.96);
-	color: #0f172a;
-}
-
-.floating-panel--dark .floating-panel__inner {
-	background: rgba(11, 15, 25, 0.9);
-	color: #f8fafc;
-}
-
-.floating-panel__glow {
-	position: absolute;
-	border-radius: 9999px;
-	filter: blur(80px);
-	opacity: 0.6;
-}
-
-.floating-panel__glow--primary {
-	top: -70px;
-	right: -40px;
-	width: 180px;
-	height: 180px;
-	background: rgba(37, 99, 235, 0.8);
-}
-
-.floating-panel__glow--secondary {
-	bottom: -70px;
-	left: -50px;
-	width: 160px;
-	height: 160px;
-	background: rgba(16, 185, 129, 0.75);
-}
-
-.floating-panel__header {
-	display: grid;
-	gap: 0.35rem;
-	margin-bottom: 1.25rem;
-}
-
-.floating-panel__title {
-	margin: 0;
-	font-size: 1rem;
-	font-weight: 600;
-}
-
-.floating-panel__subtitle {
-	margin: 0;
-	font-size: 0.85rem;
-	opacity: 0.75;
-}
-
-.quick-commands {
-	display: grid;
-	gap: 0.75rem;
-	margin: 0;
-	padding: 0;
-	list-style: none;
-}
-
-.quick-commands__item {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	padding: 0.75rem 0.9rem;
-	border-radius: 18px;
-	backdrop-filter: blur(12px);
-}
-
-.floating-panel--light .quick-commands__item {
-	background: rgba(37, 99, 235, 0.08);
-}
-
-.floating-panel--dark .quick-commands__item {
-	background: rgba(255, 255, 255, 0.08);
-}
-
-.quick-commands__key {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-width: 2.5rem;
-	height: 2.5rem;
-	border-radius: 9999px;
-	font-weight: 600;
-	font-size: 0.85rem;
-	letter-spacing: 0.05em;
-	text-transform: uppercase;
-	border: 1px solid transparent;
-	box-shadow: 0 12px 28px rgba(15, 23, 42, 0.15);
-}
-
-.floating-panel--light .quick-commands__key {
-	background: rgba(37, 99, 235, 0.16);
-	color: rgba(37, 99, 235, 0.95);
-}
-
-.floating-panel--dark .quick-commands__key {
-	background: rgba(37, 99, 235, 0.3);
-	color: #dbeafe;
-	border-color: rgba(148, 163, 184, 0.35);
-}
-
-.quick-commands__description {
-	font-size: 0.9rem;
-	line-height: 1.4;
-	opacity: 0.9;
-}
-
-.floating-panel__footer {
-	margin-top: 1.25rem;
-	font-size: 0.8rem;
-	opacity: 0.7;
-}
-
-.floating-panel--dark .floating-panel__footer {
-	color: rgba(226, 232, 240, 0.85);
-}
-
-.selected-points__counter {
-	margin: 0;
-	font-size: 0.85rem;
-	opacity: 0.75;
-}
-
-.selected-points__content {
-	display: grid;
-	gap: 0.85rem;
-}
-
-.selected-points__empty {
-	margin: 0;
-	font-size: 0.9rem;
-	opacity: 0.8;
-}
-
-.selected-points__list {
-	margin: 0;
-	padding: 0;
-	list-style: none;
-	display: grid;
-	gap: 0.75rem;
-}
-
-.selected-points__list li {
-	width: 100%;
-}
-
-.intro-modal {
-	position: relative;
-	padding: 1px;
-	border-radius: 32px;
-	background: linear-gradient(135deg, rgba(37, 99, 235, 0.35), rgba(16, 185, 129, 0.4));
-	box-shadow: 0 32px 60px rgba(15, 23, 42, 0.25);
-}
-
-.intro-modal__inner {
-	position: relative;
-	border-radius: 30px;
-	padding: 2.75rem 2.5rem;
-	overflow: hidden;
-}
-
-.intro-modal--light .intro-modal__inner {
-	background: rgba(255, 255, 255, 0.98);
-	color: #0f172a;
-}
-
-.intro-modal--dark .intro-modal__inner {
-	background: rgba(11, 15, 25, 0.92);
-	color: #f8fafc;
-}
-
-.intro-modal__glow {
-	position: absolute;
-	border-radius: 9999px;
-	filter: blur(90px);
-	opacity: 0.6;
-}
-
-.intro-modal__glow--primary {
-	top: -120px;
-	right: -80px;
-	width: 260px;
-	height: 260px;
-	background: rgba(37, 99, 235, 0.8);
-}
-
-.intro-modal__glow--secondary {
-	bottom: -100px;
-	left: -60px;
-	width: 220px;
-	height: 220px;
-	background: rgba(16, 185, 129, 0.75);
-}
-
-.intro-header {
-	text-align: center;
-	display: grid;
-	gap: 0.75rem;
-	margin-bottom: 1.5rem;
-}
-
-.intro-badge {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	margin: 0 auto;
-	padding: 0.25rem 0.75rem;
-	border-radius: 9999px;
-	background: rgba(37, 99, 235, 0.16);
-	color: rgba(37, 99, 235, 0.95);
-	font-weight: 600;
-	font-size: 0.75rem;
-	letter-spacing: 0.08em;
-	text-transform: uppercase;
-}
-
-.intro-modal--dark .intro-badge {
-	background: rgba(37, 99, 235, 0.3);
-	color: #dbeafe;
-}
-
-.intro-title {
-	font-size: 2rem;
-	line-height: 1.25;
-	font-weight: 700;
-}
-
-.intro-subtitle {
-	font-size: 1rem;
-	max-width: 36rem;
-	margin: 0 auto;
-	opacity: 0.85;
-}
-
-.intro-highlights {
-	display: grid;
-	gap: 1rem;
-	margin: 1.75rem 0;
-}
-
-.intro-highlight {
-	display: flex;
-	align-items: flex-start;
-	gap: 1rem;
-	padding: 1rem 1.25rem;
-	border-radius: 20px;
-	backdrop-filter: blur(12px);
-}
-
-.intro-modal--light .intro-highlight {
-	background: rgba(37, 99, 235, 0.08);
-}
-
-.intro-modal--dark .intro-highlight {
-	background: rgba(255, 255, 255, 0.08);
-}
-
-.intro-highlight__icon {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 3rem;
-	height: 3rem;
-	border-radius: 9999px;
-	background: rgba(255, 255, 255, 0.15);
-	font-size: 1.5rem;
-}
-
-.intro-modal--light .intro-highlight__icon {
-	background: rgba(37, 99, 235, 0.12);
-}
-
-.intro-highlight__title {
-	font-size: 1rem;
-	font-weight: 600;
-	margin-bottom: 0.25rem;
-}
-
-.intro-highlight__description {
-	font-size: 0.9rem;
-	opacity: 0.85;
-	margin: 0;
-}
-
-.intro-footer {
-	display: grid;
-	gap: 1.5rem;
-	margin-top: 1.5rem;
-}
-
-.intro-note {
-	text-align: center;
-	font-size: 0.95rem;
-	opacity: 0.85;
-}
-
-.intro-actions {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 0.75rem;
-}
-
-@media (min-width: 768px) {
-	.intro-actions {
-		flex-direction: row;
-		justify-content: center;
-	}
-
-	.intro-highlight {
-		padding: 1.25rem 1.5rem;
-	}
-}
-</style>
+<style scoped src="./App.css"></style>
