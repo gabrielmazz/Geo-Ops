@@ -1,0 +1,15 @@
+flowchart TD
+    CHANGE[Alteracao em pontos,<br/>limite ou aproximacao] --> CHECK{Quantidade de pontos<br/>e igual ao limite<br/>e maior ou igual a 2?}
+
+    CHECK -- Nao --> RESET[Reseta estado da rota<br/>remove rota, erro e loading]
+    CHECK -- Sim --> FETCH[Busca rota no backend]
+
+    FETCH --> REQ[Requisicao HTTP para rota]
+    REQ --> RESP{Backend retornou rota?}
+
+    RESP -- Nao --> FAIL[Erro de rota + diagnostico<br/>alertas para orientar correcao]
+    RESP -- Sim --> VALIDATE[Valida ancora inicial e final]
+
+    VALIDATE --> OK{Origem e destino<br/>ficaram proximos da rota?}
+    OK -- Nao --> INVALID[Limpa resultado e mostra alertas<br/>de ponto fora de area valida]
+    OK -- Sim --> SUCCESS[Atualiza routeResult,<br/>mapa, timeline e drawers]

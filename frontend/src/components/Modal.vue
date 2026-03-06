@@ -67,7 +67,7 @@ const handleAfterLeave = () => {
 }
 </script>
 
-<template>
+	<template>
 	<n-modal
 		:show="props.show"
 		:mask-closable="props.maskClosable"
@@ -78,21 +78,14 @@ const handleAfterLeave = () => {
 		@after-enter="handleAfterEnter"
 		@after-leave="handleAfterLeave">
 		<n-card
-			:title="props.title"
+			class="app-modal-card"
 			:bordered="props.bordered"
 			:size="props.size"
-			:closable="props.closable"
 			:segmented="props.segmented"
 			:style="cardStyle"
 			role="dialog"
-			aria-modal="true"
-			@close="handleCardClose">
-			<template v-if="$slots.header" #header>
-				<slot name="header" />
-			</template>
-			<template v-if="$slots.headerExtra" #header-extra>
-				<slot name="headerExtra" />
-			</template>
+			aria-modal="true">
+
 
 			<slot />
 
@@ -102,3 +95,29 @@ const handleAfterLeave = () => {
 		</n-card>
 	</n-modal>
 </template>
+
+<style scoped>
+:deep(.app-modal-card.n-card) {
+	border-radius: 12px !important;
+	overflow: hidden;
+	box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+}
+
+:deep(.app-modal-card .n-card__content) {
+	position: relative;
+}
+
+.app-overlay-close {
+	position: absolute;
+	top: 1rem;
+	right: 1rem;
+	z-index: 1;
+	border: 0;
+	background: transparent;
+	color: rgba(71, 85, 105, 0.9);
+	font-size: 1.35rem;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0;
+}
+</style>

@@ -1,0 +1,26 @@
+flowchart LR
+    API[/POST \/api\/routes/]
+    CTRL[RouteController<br/>recebe a requisicao]
+    SERVICE[RouteService<br/>valida origem, destino e quantidade]
+    APPROX{Aproximacao<br/>habilitada?}
+    NEAREST([OSRM nearest<br/>aproxima ancora para via])
+    ROUTING[OsrmRoutingService<br/>monta a chamada externa]
+    ROUTE[(OSRM route<br/>calcula a geometria da rota)]
+    RESULT[RouteResponse<br/>nodes + coordinates + totalCost]
+
+    API --> CTRL --> SERVICE --> APPROX
+    APPROX -- Sim --> NEAREST --> ROUTING
+    APPROX -- Nao --> ROUTING
+    ROUTING --> ROUTE --> RESULT
+
+    classDef frontend fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1.5px;
+    classDef backend fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1.5px;
+    classDef decision fill:#fee2e2,stroke:#dc2626,color:#7f1d1d,stroke-width:2px;
+    classDef external fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:1.5px;
+    classDef output fill:#ede9fe,stroke:#7c3aed,color:#4c1d95,stroke-width:1.5px;
+
+    class API frontend;
+    class CTRL,SERVICE,ROUTING backend;
+    class APPROX decision;
+    class NEAREST,ROUTE external;
+    class RESULT output;

@@ -1,0 +1,26 @@
+flowchart LR
+    RESULT[RouteResponse<br/>retorna ao frontend]
+    APP[[App.vue<br/>interpreta e valida o retorno]]
+    VALIDATE{Origem e destino<br/>fazem sentido na rota?}
+    ERROR[RouteError<br/>e alertas de correcao]
+    MAP[MapView.vue<br/>desenha polyline e marcadores]
+    TIMELINE[Drawer da timeline<br/>mostra etapas da rota]
+    PANELS[Alerts, drawers,<br/>modais e resumo visual]
+
+    RESULT --> APP --> VALIDATE
+    VALIDATE -- Nao --> ERROR
+    VALIDATE -- Sim --> MAP
+    VALIDATE -- Sim --> TIMELINE
+    VALIDATE -- Sim --> PANELS
+
+    classDef output fill:#ede9fe,stroke:#7c3aed,color:#4c1d95,stroke-width:1.5px;
+    classDef appcore fill:#bfdbfe,stroke:#1d4ed8,color:#0f172a,stroke-width:2px;
+    classDef decision fill:#fee2e2,stroke:#dc2626,color:#7f1d1d,stroke-width:2px;
+    classDef frontend fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1.5px;
+    classDef warning fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:1.5px;
+
+    class RESULT output;
+    class APP appcore;
+    class VALIDATE decision;
+    class MAP,TIMELINE,PANELS frontend;
+    class ERROR warning;

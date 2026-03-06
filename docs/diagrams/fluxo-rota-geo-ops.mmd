@@ -1,0 +1,47 @@
+sequenceDiagram
+    participant U as Usuario
+    participant MV as MapView.vue
+    participant APP as App.vue
+    participant API as api.ts
+    participant CTRL as RouteController
+    participant SERVICE as RouteService
+    participant ORS as OsrmRoutingService
+    participant OSRM as OSRM
+
+    U->>MV: Clica no mapa ou arrasta marcador
+    MV->>APP: update:points / point-moved
+    APP->>APP: Atualiza selectedPoints
+    APP->>APP: evaluateRouteComputation()
+
+    alt Menos de 2 pontos ou quantidade diferente do limite configurado
+        APP->>APP: resetRouteState()
+        APP-->>U: Limpa rota atual e aguarda novos pontos
+    else Quantidade correta de pontos
+        APP->>API: requestRoute(points, allowApproximation)
+        API->>CTRL: POST /api/routes
+        CTRL->>SERVICE: calculateRoute(anchors, allowApproximation)
+        SERVICE->>ORS: route(anchors, allowApproximation)
+
+        alt Aproximacao habilitada
+            ORS->>OSRM: nearest para cada ancora
+            OSRM-->>ORS: ancora ajustada ou original
+        end
+
+        ORS->>OSRM: route/v1/driving
+        OSRM-->>ORS: geometria da rota + distancia
+        ORS-->>SERVICE: RouteResponse
+        SERVICE-->>CTRL: RouteResponse
+        CTRL-->>API: 200 OK
+        API-->>APP: nodes + coordinates + totalCost
+
+        APP->>APP: validateRouteAnchors()
+
+        alt Origem ou destino invalidos
+            APP->>APP: routeError + alerts de correcao
+            APP-->>U: Solicita ajuste manual do ponto
+        else Rota valida
+            APP->>MV: Atualiza polyline e marcadores
+            APP->>APP: Gera timeline e resumo visual
+            APP-->>U: Exibe rota, drawer, atalhos e alertas
+        end
+    end
